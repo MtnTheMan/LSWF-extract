@@ -1,0 +1,97 @@
+### (15)
+
+import arcpy
+import math
+
+# Input data
+input_feature = r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics\WindbreakSummaryStatistics.gdb\AllCounties_FinalWindbreaks_SummaryStats_v2"
+
+# Output simplified feature class
+simplified_feature = r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics\WindbreakSummaryStatistics.gdb\Simplified_FinalWindbreaks"
+
+# Add new fields to the original feature class if not already added
+arcpy.management.AddField(input_feature, "Axis_Angle", "DOUBLE")
+arcpy.management.AddField(input_feature, "County", "TEXT", field_length=10)
+arcpy.management.AddField(input_feature, "Lat", "DOUBLE")
+arcpy.management.AddField(input_feature, "Lon", "DOUBLE")
+
+# Function to find the longest Euclidean axis of a polygon
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Simplify the geometry and store as a new feature class
+arcpy.cartography.SimplifyPolygon(
+    in_features=input_feature,
+    out_feature_class=simplified_feature,
+    algorithm="POINT_REMOVE",
+    tolerance="0.6 Meters",
+    collapsed_point_option="KEEP_COLLAPSED_POINTS"
+)
+
+# Update cursor to process simplified features and write back to the original layer
+with arcpy.da.SearchCursor(simplified_feature, ["OID@", "SHAPE@", "MERGE_SRC"]) as search_cursor, \
+     arcpy.da.UpdateCursor(input_feature, ["OID@", "Axis_Angle", "County", "Lat", "Lon"]) as update_cursor:
+
+    # Create a mapping of OID to calculated values
+    oid_to_values = {}
+
+    for row in search_cursor:
+        oid = row[0]
+        geometry = row[1]  # Simplified SHAPE@
+        merge_src = row[2]  # MERGE_SRC column
+
+        # Validate geometry
+        if not geometry or geometry.partCount == 0:
+            print(f"Skipping invalid geometry for OID {oid}.")
+            oid_to_values[oid] = (None, None, None, None)
+            continue
+
+        # Find longest axis and calculate its angle
+        start_vertex, end_vertex, _ = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            angle = math.degrees(math.atan2(end_vertex.Y - start_vertex.Y, end_vertex.X - start_vertex.X))
+        else:
+            angle = None
+
+        # Extract County code from MERGE_SRC
+        county = merge_src[:4] if merge_src else None
+
+        # Reproject centroid to WGS 84
+        try:
+            if not geometry or geometry.partCount == 0 or geometry.spatialReference is None:
+                raise ValueError("Invalid geometry or undefined spatial reference")
+            
+            # Transform geometry to WGS 84
+            geometry_wgs84 = geometry.projectAs(arcpy.SpatialReference(4326))  # EPSG:4326
+            
+            # Get centroid in WGS 84
+            centroid = geometry_wgs84.centroid
+            lat, lon = centroid.Y, centroid.X
+        except Exception as e:
+            print(f"Error projecting centroid for OID {oid}: {e}")
+            lat, lon = None, None
+
+        # Store calculated values
+        oid_to_values[oid] = (angle, county, lat, lon)
+
+    # Write values back to the original feature class
+    for row in update_cursor:
+        oid = row[0]
+        if oid in oid_to_values:
+            row[1], row[2], row[3], row[4] = oid_to_values[oid]  # Axis_Angle, County, Lat, Lon
+            update_cursor.updateRow(row)
+
+print("Attribute table updated with longest axis angle, county, and lat/lon in decimal degrees.")
