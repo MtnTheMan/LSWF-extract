@@ -1,0 +1,2068 @@
+### (4)
+import arcpy
+import os
+import math
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_SNFI", "DOUBLE")
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+with arcpy.da.UpdateCursor(polygon_1, ["SHAPE@", "Voronoi_WSI", "Voronoi_SNFI"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+        
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+        # Recalculate Sinuosity: (0.5 * perimeter) / longest_axis
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        row[1] = sinuosity_index  # Save the Voronoi_WSI
+
+        # Recalculate SNFI, handle possible zero division
+        delta_x = abs(start_vertex.X - end_vertex.X)
+        delta_y = abs(start_vertex.Y - end_vertex.Y)
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI, avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion)
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        row[2] = snfi  # Save the Voronoi_SNFI
+
+        cursor.updateRow(row)
+
+        # Provide updates every 1000 features
+        if i % 1000 == 0:
+            print(f"Processed {i} features in JaMI_FinalIntersect...")
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_SNFI", "DOUBLE")
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+with arcpy.da.UpdateCursor(polygon_2, ["SHAPE@", "Default_WSI", "Default_SNFI"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+        
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+        # Recalculate Sinuosity: (0.5 * perimeter) / longest_axis
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        row[1] = sinuosity_index  # Save the Default_WSI
+
+        # Recalculate SNFI, handle possible zero division
+        delta_x = abs(start_vertex.X - end_vertex.X)
+        delta_y = abs(start_vertex.Y - end_vertex.Y)
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI, avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion)
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        row[2] = snfi  # Save the Default_SNFI
+
+        cursor.updateRow(row)
+
+        # Provide updates every 1000 features
+        if i % 1000 == 0:
+            print(f"Processed {i} features in JaMI_CopiedShape...")
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"Voronoi_SNFI >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"Default_SNFI >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+
+
+### (13)
+
+import arcpy
+import os
+import math
+import time
+from arcpy.sa import *  # Import Spatial Analyst tools for morphological operations
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Function to perform morphological erosion
+def morphological_erosion(raster, kernel_size, direction):
+    # Define a rectangular kernel (single row for NS and single column for EW)
+    if direction == "NS":
+        kernel = NbrRectangle(1, kernel_size, "CELL")
+    elif direction == "EW":
+        kernel = NbrRectangle(kernel_size, 1, "CELL")
+    else:
+        raise ValueError("Invalid direction for erosion. Use 'NS' or 'EW'.")
+
+    # Apply morphological erosion using FocalStatistics with MINIMUM operation
+    eroded_raster = FocalStatistics(raster, kernel, "MINIMUM", "DATA")
+    return eroded_raster
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(simplified_polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(simplified_polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(simplified_polygon_1, "Longest_Axis_Len", "DOUBLE")
+arcpy.AddField_management(simplified_polygon_1, "Voronoi_fullSNFI", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+with arcpy.da.UpdateCursor(simplified_polygon_1, ["SHAPE@", "Voronoi_WSI", "Voronoi_fullSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Recalculate Sinuosity: (0.5 * perimeter) / longest_axis
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        row[1] = sinuosity_index  # Save the Voronoi_WSI
+
+        # Convert polygon geometry to raster for morphological operations
+        # Create a temporary feature class for the current geometry
+        temp_fc = "in_memory/temp_fc"
+        if arcpy.Exists(temp_fc):
+            arcpy.Delete_management(temp_fc)
+        arcpy.CopyFeatures_management(geometry, temp_fc)
+
+        # Convert the temporary feature class to raster
+        temp_raster = arcpy.PolygonToRaster_conversion(temp_fc, "OBJECTID", "in_memory/temp_raster", "CELL_CENTER", "", 1)
+
+        # Perform morphological erosion for both NS and EW directions
+        ns_eroded = morphological_erosion(temp_raster, 5, "NS")  # Kernel size can be adjusted
+        ew_eroded = morphological_erosion(temp_raster, 5, "EW")
+
+        # Calculate the sum of pixels after erosion in each direction
+        ns_sum = arcpy.GetRasterProperties_management(ns_eroded, "SUM").getOutput(0)
+        ew_sum = arcpy.GetRasterProperties_management(ew_eroded, "SUM").getOutput(0)
+
+        # Calculate SNFI, avoid division by zero if both values are zero
+        ns_sum, ew_sum = float(ns_sum), float(ew_sum)
+        if ns_sum + ew_sum != 0:
+            snfi = abs((ns_sum - ew_sum) / (ns_sum + ew_sum))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        row[2] = snfi  # Save the Voronoi_SNFI
+        row[3] = orientation  # Save the orientation of the longest axis
+        row[4] = longest_axis  # Save the length of the longest axis
+
+        cursor.updateRow(row)
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(simplified_polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(simplified_polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(simplified_polygon_2, "Longest_Axis_Len", "DOUBLE")
+arcpy.AddField_management(simplified_polygon_2, "Default_fullSNFI", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+with arcpy.da.UpdateCursor(simplified_polygon_2, ["SHAPE@", "Default_WSI", "Default_fullSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+        # Recalculate Sinuosity: (0.5 * perimeter) / longest_axis
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        row[1] = sinuosity_index  # Save the Default_WSI
+
+        # Convert polygon geometry to raster for morphological operations
+        # Create a temporary feature class for the current geometry
+        temp_fc = "in_memory/temp_fc"
+        if arcpy.Exists(temp_fc):
+            arcpy.Delete_management(temp_fc)
+        arcpy.CopyFeatures_management(geometry, temp_fc)
+
+        # Convert the temporary feature class to raster
+        temp_raster = arcpy.PolygonToRaster_conversion(temp_fc, "OBJECTID", "in_memory/temp_raster", "CELL_CENTER", "", 1)
+
+        # Perform morphological erosion for both NS and EW directions
+        ns_eroded = morphological_erosion(temp_raster, 5, "NS")
+        ew_eroded = morphological_erosion(temp_raster, 5, "EW")
+
+        # Calculate the sum of pixels after erosion in each direction
+        ns_sum = arcpy.GetRasterProperties_management(ns_eroded, "SUM").getOutput(0)
+        ew_sum = arcpy.GetRasterProperties_management(ew_eroded, "SUM").getOutput(0)
+
+        # Calculate SNFI, avoid division by zero if both values are zero
+        ns_sum, ew_sum = float(ns_sum), float(ew_sum)
+        if ns_sum + ew_sum != 0:
+            snfi = abs((ns_sum - ew_sum) / (ns_sum + ew_sum))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        row[2] = snfi  # Save the Default_SNFI
+        row[3] = orientation  # Save the orientation of the longest axis
+        row[4] = longest_axis  # Save the length of the longest axis
+
+        cursor.updateRow(row)
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(simplified_polygon_1, filtered_layer_1, where_clause=f"Voronoi_fullSNFI >= {snfi_threshold}")
+arcpy.analysis.Select(simplified_polygon_2, filtered_layer_2, where_clause=f"Default_fullSNFI >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+
+
+### (5)
+
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines
+longest_lines_layer = os.path.join(output_folder, "Longest_Lines")
+if arcpy.Exists(longest_lines_layer):
+    arcpy.Delete_management(longest_lines_layer)
+
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines", "POLYLINE", spatial_reference=polygon_1)
+arcpy.AddField_management(longest_lines_layer, "Source", "TEXT")
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@", "Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Rotate all vertices to align with the longest axis
+        angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+        transformed_vertices = []
+        for part in geometry:
+            for vertex in part:
+                if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                    x_prime = vertex.X * math.cos(angle) + vertex.Y * math.sin(angle)
+                    y_prime = -vertex.X * math.sin(angle) + vertex.Y * math.cos(angle)
+                    transformed_vertices.append((x_prime, y_prime))
+
+        # Calculate the extents along the transformed X' and Y' axes
+        if transformed_vertices:
+            extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+            extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Simple SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Store values for later update in the original polygons
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        simplified_values.append((sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_FinalIntersect"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_1, ["Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@", "Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Rotate all vertices to align with the longest axis
+        angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+        transformed_vertices = []
+        for part in geometry:
+            for vertex in part:
+                if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                    x_prime = vertex.X * math.cos(angle) + vertex.Y * math.sin(angle)
+                    y_prime = -vertex.X * math.sin(angle) + vertex.Y * math.cos(angle)
+                    transformed_vertices.append((x_prime, y_prime))
+
+        # Calculate the extents along the transformed X' and Y' axes
+        if transformed_vertices:
+            extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+            extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Simple SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Store values for later update in the original polygons
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        simplified_values.append((sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_CopiedShape"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_2, ["Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"ABS(Voronoi_simpleSNFI) >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"ABS(Default_simpleSNFI) >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+
+### (8)
+
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines
+longest_lines_layer = os.path.join(output_folder, "Longest_Lines")
+if arcpy.Exists(longest_lines_layer):
+    arcpy.Delete_management(longest_lines_layer)
+
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines", "POLYLINE", spatial_reference=polygon_1)
+arcpy.AddField_management(longest_lines_layer, "Source", "TEXT")
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@", "Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.isMultipart and len(geometry) == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate the Simple SNFI using axis-aligned extents
+        centroid = geometry.centroid if geometry else None  # Get the centroid of the geometry
+        if centroid:
+            angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+            transformed_vertices = []
+            for part in geometry:
+                for vertex in part:
+                    if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                        # Translate vertex to centroid origin
+                        translated_x = vertex.X - centroid.X
+                        translated_y = vertex.Y - centroid.Y
+                        # Rotate vertices to align with the longest axis
+                        x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                        y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                        transformed_vertices.append((x_prime, y_prime))
+
+            # Calculate the extents along the transformed X' and Y' axes
+            if transformed_vertices:
+                extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+                extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+            else:
+                extent_along_x, extent_along_y = 0, 0
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Simple SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_FinalIntersect"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_1, ["Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@", "Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.isEmpty:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate the Simple SNFI using axis-aligned extents
+        centroid = geometry.centroid if geometry else None  # Get the centroid of the geometry
+        if centroid:
+            angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+            transformed_vertices = []
+            for part in geometry:
+                for vertex in part:
+                    if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                        # Translate vertex to centroid origin
+                        translated_x = vertex.X - centroid.X
+                        translated_y = vertex.Y - centroid.Y
+                        # Rotate vertices to align with the longest axis
+                        x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                        y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                        transformed_vertices.append((x_prime, y_prime))
+
+            # Calculate the extents along the transformed X' and Y' axes
+            if transformed_vertices:
+                extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+                extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+            else:
+                extent_along_x, extent_along_y = 0, 0
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Simple SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_CopiedShape"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_2, ["Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"ABS(Voronoi_simpleSNFI) >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"ABS(Default_simpleSNFI) >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+###(10)
+
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines
+longest_lines_layer = os.path.join(output_folder, "Longest_Lines")
+if arcpy.Exists(longest_lines_layer):
+    arcpy.Delete_management(longest_lines_layer)
+
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines", "POLYLINE", spatial_reference=polygon_1)
+arcpy.AddField_management(longest_lines_layer, "Source", "TEXT")
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@", "Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate the Simple SNFI using axis-aligned extents
+        try:
+            centroid = geometry.centroid if geometry else None  # Get the centroid of the geometry
+        except:
+            centroid = None  # If an error occurs, assign None
+        if centroid:
+            angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+            transformed_vertices = []
+            for part in geometry:
+                for vertex in part:
+                    if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                        # Translate vertex to centroid origin
+                        translated_x = vertex.X - centroid.X
+                        translated_y = vertex.Y - centroid.Y
+                        # Rotate vertices to align with the longest axis
+                        x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                        y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                        transformed_vertices.append((x_prime, y_prime))
+
+            # Calculate the extents along the transformed X' and Y' axes
+            if transformed_vertices:
+                extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+                extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+            else:
+                extent_along_x, extent_along_y = 0, 0
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Simple SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_FinalIntersect"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_1, ["Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@", "Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate the Simple SNFI using axis-aligned extents
+        centroid = geometry.centroid if geometry else None  # Get the centroid of the geometry
+        if centroid:
+            angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+            transformed_vertices = []
+            for part in geometry:
+                for vertex in part:
+                    if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                        # Translate vertex to centroid origin
+                        translated_x = vertex.X - centroid.X
+                        translated_y = vertex.Y - centroid.Y
+                        # Rotate vertices to align with the longest axis
+                        x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                        y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                        transformed_vertices.append((x_prime, y_prime))
+
+            # Calculate the extents along the transformed X' and Y' axes
+            if transformed_vertices:
+                extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+                extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+            else:
+                extent_along_x, extent_along_y = 0, 0
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Simple SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_CopiedShape"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_2, ["Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"ABS(Voronoi_simpleSNFI) >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"ABS(Default_simpleSNFI) >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+###(12)
+
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines
+longest_lines_layer = os.path.join(output_folder, "Longest_Lines")
+if arcpy.Exists(longest_lines_layer):
+    arcpy.Delete_management(longest_lines_layer)
+
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines", "POLYLINE", spatial_reference=polygon_1)
+arcpy.AddField_management(longest_lines_layer, "Source", "TEXT")
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@", "Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (450 - math.degrees(math.atan2(delta_y, delta_x))) % 360  # Calculate orientation in degrees from north, with 0 being north and 270 being west
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate SNFI using directional elongation ratios (retaining the previous approach)
+        delta_x = abs(start_vertex.X - end_vertex.X) if start_vertex and end_vertex else 0
+        delta_y = abs(start_vertex.Y - end_vertex.Y) if start_vertex and end_vertex else 0
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI, avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi = abs((ns_erosion - ew_erosion) / (ns_erosion + ew_erosion))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_FinalIntersect"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_1, ["Voronoi_WSI", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@", "Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (math.degrees(math.atan2(delta_y, delta_x)) + 360) % 360  # Calculate orientation in degrees from north
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate SNFI using directional elongation ratios (retaining the previous approach)
+        delta_x = abs(start_vertex.X - end_vertex.X) if start_vertex and end_vertex else 0
+        delta_y = abs(start_vertex.Y - end_vertex.Y) if start_vertex and end_vertex else 0
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI, avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi = abs((ns_erosion - ew_erosion) / (ns_erosion + ew_erosion))
+        else:
+            snfi = 0  # Assign zero if the denominator is zero
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_CopiedShape"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_2, ["Default_WSI", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"ABS(Voronoi_simpleSNFI) >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"ABS(Default_simpleSNFI) >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+### (15)
+
+import arcpy
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines
+longest_lines_layer = os.path.join(output_folder, "Longest_Lines")
+if arcpy.Exists(longest_lines_layer):
+    arcpy.Delete_management(longest_lines_layer)
+
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines", "POLYLINE", spatial_reference=polygon_1)
+arcpy.AddField_management(longest_lines_layer, "Source", "TEXT")
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "SNFI_CoordinateGrid", "DOUBLE")
+arcpy.AddField_management(polygon_1, "SNFI_Centerline", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (450 - math.degrees(math.atan2(delta_y, delta_x))) % 360  # Calculate orientation in degrees from north, with 0 being north and 270 being west
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate SNFI using directional elongation ratios (Coordinate Grid-based SNFI)
+        delta_x = abs(start_vertex.X - end_vertex.X) if start_vertex and end_vertex else 0
+        delta_y = abs(start_vertex.Y - end_vertex.Y) if start_vertex and end_vertex else 0
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI (Coordinate Grid-based), avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi_coordinate_grid = abs((ns_erosion - ew_erosion) / (ns_erosion + ew_erosion))
+        else:
+            snfi_coordinate_grid = 0  # Assign zero if the denominator is zero
+
+        # Calculate Centerline-based SNFI using extents along the aligned axis
+          try:
+              centroid = geometry.centroid if geometry and not geometry.isEmpty else None  # Get the centroid of the geometry
+          except Exception as e:
+              centroid = None  # Handle case where centroid calculation fails
+          
+          if centroid:
+              try:
+                  angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+                  transformed_vertices = []
+                  for part in geometry:
+                      for vertex in part:
+                          if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                              # Translate vertex to centroid origin
+                              translated_x = vertex.X - centroid.X
+                              translated_y = vertex.Y - centroid.Y
+                              # Rotate vertices to align with the longest axis
+                              x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                              y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                              transformed_vertices.append((x_prime, y_prime))
+              except Exception as e:
+                  transformed_vertices = []  # In case of any errors, set transformed_vertices as empty
+          else:
+              transformed_vertices = []
+          
+          # Calculate the extents along the transformed X' and Y' axes
+          if transformed_vertices:
+              extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+              extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+          else:
+              extent_along_x, extent_along_y = 0, 0
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Centerline-based SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi_centerline = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi_centerline = 0  # Assign zero if the denominator is zero
+
+        # Use the maximum of the two SNFIs for filtering purposes
+        snfi_final = max(snfi_coordinate_grid, snfi_centerline)
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi_coordinate_grid, snfi_centerline, snfi_final, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_FinalIntersect"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_1, ["Voronoi_WSI", "SNFI_CoordinateGrid", "SNFI_Centerline", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3], row[4], row[5] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "SNFI_CoordinateGrid", "DOUBLE")
+arcpy.AddField_management(polygon_2, "SNFI_Centerline", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (450 - math.degrees(math.atan2(delta_y, delta_x))) % 360  # Calculate orientation in degrees from north, with 0 being north and and 270 being west
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate SNFI using directional elongation ratios (Coordinate Grid-based SNFI)
+        delta_x = abs(start_vertex.X - end_vertex.X) if start_vertex and end_vertex else 0
+        delta_y = abs(start_vertex.Y - end_vertex.Y) if start_vertex and end_vertex else 0
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI (Coordinate Grid-based), avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi_coordinate_grid = abs((ns_erosion - ew_erosion) / (ns_erosion + ew_erosion))
+        else:
+            snfi_coordinate_grid = 0  # Assign zero if the denominator is zero
+
+        # Calculate Centerline-based SNFI using extents along the aligned axis
+          try:
+              centroid = geometry.centroid if geometry and not geometry.isEmpty else None  # Get the centroid of the geometry
+          except Exception as e:
+              centroid = None  # Handle case where centroid calculation fails
+          
+          if centroid:
+              try:
+                  angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+                  transformed_vertices = []
+                  for part in geometry:
+                      for vertex in part:
+                          if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                              # Translate vertex to centroid origin
+                              translated_x = vertex.X - centroid.X
+                              translated_y = vertex.Y - centroid.Y
+                              # Rotate vertices to align with the longest axis
+                              x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                              y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                              transformed_vertices.append((x_prime, y_prime))
+              except Exception as e:
+                  transformed_vertices = []  # In case of any errors, set transformed_vertices as empty
+          else:
+              transformed_vertices = []
+          
+          # Calculate the extents along the transformed X' and Y' axes
+          if transformed_vertices:
+              extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+              extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+          else:
+              extent_along_x, extent_along_y = 0, 0
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Centerline-based SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi_centerline = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi_centerline = 0  # Assign zero if the denominator is zero
+
+        # Use the maximum of the two SNFIs for filtering purposes
+        snfi_final = max(snfi_coordinate_grid, snfi_centerline)
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi_coordinate_grid, snfi_centerline, snfi_final, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_CopiedShape"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_2, ["Default_WSI", "SNFI_CoordinateGrid", "SNFI_Centerline", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3], row[4], row[5] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"ABS(Voronoi_simpleSNFI) >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"ABS(Default_simpleSNFI) >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
+### (17)
+
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines
+longest_lines_layer = os.path.join(output_folder, "Longest_Lines")
+if arcpy.Exists(longest_lines_layer):
+    arcpy.Delete_management(longest_lines_layer)
+
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines", "POLYLINE", spatial_reference=polygon_1)
+arcpy.AddField_management(longest_lines_layer, "Source", "TEXT")
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", 0.6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", 0.6)
+
+# Process the first polygon with "Voronoi_WSI" and "Voronoi_SNFI"
+print("Starting processing of the first polygon: JaMI_FinalIntersect")
+
+arcpy.AddField_management(polygon_1, "Voronoi_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "SNFI_CoordinateGrid", "DOUBLE")
+arcpy.AddField_management(polygon_1, "SNFI_Centerline", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Voronoi_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_1, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+print("Calculating Voronoi WSI and SNFI for each feature in JaMI_FinalIntersect...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (450 - math.degrees(math.atan2(delta_y, delta_x))) % 360  # Calculate orientation in degrees from north, with 0 being north and 270 being west
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate SNFI using directional elongation ratios (Coordinate Grid-based SNFI)
+        delta_x = abs(start_vertex.X - end_vertex.X) if start_vertex and end_vertex else 0
+        delta_y = abs(start_vertex.Y - end_vertex.Y) if start_vertex and end_vertex else 0
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI (Coordinate Grid-based), avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi_coordinate_grid = abs((ns_erosion - ew_erosion) / (ns_erosion + ew_erosion))
+        else:
+            snfi_coordinate_grid = 0  # Assign zero if the denominator is zero
+
+        # Calculate Centerline-based SNFI using extents along the aligned axis
+        try:
+            centroid = geometry.centroid if geometry else None  # Get the centroid of the geometry
+        except Exception as e:
+            centroid = None  # Handle case where centroid calculation fails
+
+        if centroid:
+            try:
+                angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+                transformed_vertices = []
+                for part in geometry:
+                    for vertex in part:
+                        if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                            # Translate vertex to centroid origin
+                            translated_x = vertex.X - centroid.X
+                            translated_y = vertex.Y - centroid.Y
+                            # Rotate vertices to align with the longest axis
+                            x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                            y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                            transformed_vertices.append((x_prime, y_prime))
+            except Exception as e:
+                transformed_vertices = []  # In case of any errors, set transformed_vertices as empty
+        else:
+            transformed_vertices = []
+
+        # Calculate the extents along the transformed X' and Y' axes
+        if transformed_vertices:
+            extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+            extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Centerline-based SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi_centerline = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi_centerline = 0  # Assign zero if the denominator is zero
+
+        # Use the maximum of the two SNFIs for filtering purposes
+        snfi_final = max(snfi_coordinate_grid, snfi_centerline)
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi_coordinate_grid, snfi_centerline, snfi_final, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_FinalIntersect"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_1 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_1) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_1, ["Voronoi_WSI", "SNFI_CoordinateGrid", "SNFI_Centerline", "Voronoi_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3], row[4], row[5] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Voronoi WSI and SNFI for JaMI_FinalIntersect.")
+
+# Process the second polygon with "Default_WSI" and "Default_SNFI"
+print("Starting processing of the second polygon: JaMI_CopiedShape")
+
+arcpy.AddField_management(polygon_2, "Default_WSI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "SNFI_CoordinateGrid", "DOUBLE")
+arcpy.AddField_management(polygon_2, "SNFI_Centerline", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Default_simpleSNFI", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Orient", "DOUBLE")
+arcpy.AddField_management(polygon_2, "Longest_Axis_Len", "DOUBLE")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+print("Calculating Default WSI and SNFI for each feature in JaMI_CopiedShape...")
+
+longest_lines = []  # Store lines to insert later
+simplified_values = []  # Store values to update in the original polygons
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@"]) as cursor:
+    for i, row in enumerate(cursor, start=1):
+        geometry = row[0]
+
+        if not geometry or geometry.partCount == 0:  # Skip invalid or empty geometries
+            continue
+
+        # Calculate the perimeter dynamically using ArcPy's geometry object
+        perimeter = geometry.length  # This gives the perimeter of the polygon
+
+        # Find the longest axis
+        start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+        if start_vertex and end_vertex:
+            delta_x = end_vertex.X - start_vertex.X
+            delta_y = end_vertex.Y - start_vertex.Y
+            orientation = (450 - math.degrees(math.atan2(delta_y, delta_x))) % 360  # Calculate orientation in degrees from north, with 0 being north and and 270 being west
+        else:
+            orientation = 0  # Assign 0 if no valid axis found
+
+        # Calculate SNFI using directional elongation ratios (Coordinate Grid-based SNFI)
+        delta_x = abs(start_vertex.X - end_vertex.X) if start_vertex and end_vertex else 0
+        delta_y = abs(start_vertex.Y - end_vertex.Y) if start_vertex and end_vertex else 0
+
+        ns_erosion = delta_y / delta_x if delta_x != 0 else 0
+        ew_erosion = delta_x / delta_y if delta_y != 0 else 0
+
+        # Calculate SNFI (Coordinate Grid-based), avoid division by zero if both values are zero
+        if ns_erosion + ew_erosion != 0:
+            snfi_coordinate_grid = abs((ns_erosion - ew_erosion) / (ns_erosion + ew_erosion))
+        else:
+            snfi_coordinate_grid = 0  # Assign zero if the denominator is zero
+
+        # Calculate Centerline-based SNFI using extents along the aligned axis
+        try:
+            centroid = geometry.centroid if geometry else None  # Get the centroid of the geometry
+        except Exception as e:
+            centroid = None  # Handle case where centroid calculation fails
+
+        if centroid:
+            try:
+                angle = math.atan2(delta_y, delta_x) if start_vertex and end_vertex else 0
+                transformed_vertices = []
+                for part in geometry:
+                    for vertex in part:
+                        if vertex is not None and hasattr(vertex, 'X') and hasattr(vertex, 'Y'):  # Ensure the vertex is valid
+                            # Translate vertex to centroid origin
+                            translated_x = vertex.X - centroid.X
+                            translated_y = vertex.Y - centroid.Y
+                            # Rotate vertices to align with the longest axis
+                            x_prime = translated_x * math.cos(angle) + translated_y * math.sin(angle)
+                            y_prime = -translated_x * math.sin(angle) + translated_y * math.cos(angle)
+                            transformed_vertices.append((x_prime, y_prime))
+            except Exception as e:
+                transformed_vertices = []  # In case of any errors, set transformed_vertices as empty
+        else:
+            transformed_vertices = []
+
+        # Calculate the extents along the transformed X' and Y' axes
+        if transformed_vertices:
+            extent_along_x = max(v[0] for v in transformed_vertices) - min(v[0] for v in transformed_vertices)
+            extent_along_y = max(v[1] for v in transformed_vertices) - min(v[1] for v in transformed_vertices)
+        else:
+            extent_along_x, extent_along_y = 0, 0
+
+        # Calculate the Centerline-based SNFI based on the aligned axis extents
+        if extent_along_x + extent_along_y != 0:
+            snfi_centerline = abs((extent_along_x - extent_along_y) / (extent_along_x + extent_along_y))
+        else:
+            snfi_centerline = 0  # Assign zero if the denominator is zero
+
+        # Use the maximum of the two SNFIs for filtering purposes
+        snfi_final = max(snfi_coordinate_grid, snfi_centerline)
+
+        # Normalize WSI by perimeter to make it comparable across features
+        sinuosity_index = (0.5 * perimeter) / longest_axis if longest_axis != 0 else 0
+        normalized_sinuosity_index = sinuosity_index / perimeter if perimeter != 0 else 0
+
+        # Store values for later update in the original polygons
+        simplified_values.append((normalized_sinuosity_index, snfi_coordinate_grid, snfi_centerline, snfi_final, orientation, longest_axis))
+
+        # Store the longest distance line for later insertion
+        if start_vertex and end_vertex:
+            line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+            longest_lines.append((line, "JaMI_CopiedShape"))
+
+        # Provide updates every 5% progress
+        if i % (total_features_2 // 20) == 0:
+            elapsed_time = time.time() - start_time
+            progress = (i / total_features_2) * 100
+            estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+            estimated_remaining_time = estimated_total_time - elapsed_time
+            hours, rem = divmod(estimated_remaining_time, 3600)
+            minutes, seconds = divmod(rem, 60)
+            print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Update original polygons with values from the simplified polygons
+with arcpy.da.UpdateCursor(polygon_2, ["Default_WSI", "SNFI_CoordinateGrid", "SNFI_Centerline", "Default_simpleSNFI", "Longest_Axis_Orient", "Longest_Axis_Len"]) as cursor:
+    for row, values in zip(cursor, simplified_values):
+        row[0], row[1], row[2], row[3], row[4], row[5] = values
+        cursor.updateRow(row)
+
+# Insert the longest distance lines after the update cursor completes
+with arcpy.da.InsertCursor(longest_lines_layer, ["SHAPE@", "Source"]) as line_cursor:
+    for line in longest_lines:
+        line_cursor.insertRow(line)
+
+print("Finished calculating Default WSI and SNFI for JaMI_CopiedShape.")
+
+# Optionally, you can add filtering based on SNFI thresholds for both polygons
+print(f"Applying SNFI filtering (threshold: {snfi_threshold}) to both polygons...")
+
+filtered_layer_1 = os.path.join(output_folder, "JaMI_FinalIntersect_Filtered")
+filtered_layer_2 = os.path.join(output_folder, "JaMI_CopiedShape_Filtered")
+
+arcpy.analysis.Select(polygon_1, filtered_layer_1, where_clause=f"ABS(Voronoi_simpleSNFI) >= {snfi_threshold}")
+arcpy.analysis.Select(polygon_2, filtered_layer_2, where_clause=f"ABS(Default_simpleSNFI) >= {snfi_threshold}")
+
+print("Filtering complete. Finished processing both polygons. Results saved to the output folder.")
+
