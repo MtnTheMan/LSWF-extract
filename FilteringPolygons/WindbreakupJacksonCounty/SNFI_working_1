@@ -1,0 +1,118 @@
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# Input polygon paths
+polygon_1 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_FinalIntersect"
+polygon_2 = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb\JaMI_CopiedShape"
+
+# Output folder
+output_folder = r"X:\ClassificationScaling\WindBreakup Jackson County\Windbreakup Jackson County\Windbreakup Jackson County.gdb"
+
+# Simplify the polygons to reduce processing time
+simplified_polygon_1 = os.path.join(output_folder, "Simplified_JaMI_FinalIntersect")
+simplified_polygon_2 = os.path.join(output_folder, "Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(simplified_polygon_1):
+    arcpy.Delete_management(simplified_polygon_1)
+if arcpy.Exists(simplified_polygon_2):
+    arcpy.Delete_management(simplified_polygon_2)
+
+# Simplify polygons using the Simplify Polygon tool
+print("Simplifying polygons to reduce processing time...")
+arcpy.cartography.SimplifyPolygon(polygon_1, simplified_polygon_1, "POINT_REMOVE", .6)
+arcpy.cartography.SimplifyPolygon(polygon_2, simplified_polygon_2, "POINT_REMOVE", .6)
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Create a new layer to store the longest distance lines for both polygons
+longest_lines_layer_1 = os.path.join(output_folder, "Longest_Lines_Simplified_JaMI_FinalIntersect")
+longest_lines_layer_2 = os.path.join(output_folder, "Longest_Lines_Simplified_JaMI_CopiedShape")
+
+# Delete layers if they already exist
+if arcpy.Exists(longest_lines_layer_1):
+    arcpy.Delete_management(longest_lines_layer_1)
+if arcpy.Exists(longest_lines_layer_2):
+    arcpy.Delete_management(longest_lines_layer_2)
+
+# Create new feature classes for storing longest axis lines
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines_Simplified_JaMI_FinalIntersect", "POLYLINE", spatial_reference=polygon_1)
+arcpy.CreateFeatureclass_management(output_folder, "Longest_Lines_Simplified_JaMI_CopiedShape", "POLYLINE", spatial_reference=polygon_2)
+
+# Process the first simplified polygon to draw the longest axis
+print("Drawing longest axis for each feature in Simplified_JaMI_FinalIntersect...")
+
+# Get total feature count for progress tracking
+total_features_1 = int(arcpy.GetCount_management(simplified_polygon_1).getOutput(0))
+start_time = time.time()
+
+with arcpy.da.SearchCursor(simplified_polygon_1, ["SHAPE@"]) as cursor:
+    with arcpy.da.InsertCursor(longest_lines_layer_1, ["SHAPE@"]) as line_cursor:
+        for i, row in enumerate(cursor, start=1):
+            geometry = row[0]
+            start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+            # Draw the longest distance line
+            if start_vertex and end_vertex:
+                line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+                line_cursor.insertRow([line])
+
+            # Provide updates every 5% progress
+            if i % (total_features_1 // 20) == 0:
+                elapsed_time = time.time() - start_time
+                progress = (i / total_features_1) * 100
+                estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+                estimated_remaining_time = estimated_total_time - elapsed_time
+                hours, rem = divmod(estimated_remaining_time, 3600)
+                minutes, seconds = divmod(rem, 60)
+                print(f"Processed {i} of {total_features_1} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+print("Finished drawing longest axis for Simplified_JaMI_FinalIntersect.")
+
+# Process the second simplified polygon to draw the longest axis
+print("Drawing longest axis for each feature in Simplified_JaMI_CopiedShape...")
+
+# Get total feature count for progress tracking
+total_features_2 = int(arcpy.GetCount_management(simplified_polygon_2).getOutput(0))
+start_time = time.time()
+
+with arcpy.da.SearchCursor(simplified_polygon_2, ["SHAPE@"]) as cursor:
+    with arcpy.da.InsertCursor(longest_lines_layer_2, ["SHAPE@"]) as line_cursor:
+        for i, row in enumerate(cursor, start=1):
+            geometry = row[0]
+            start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+            # Draw the longest distance line
+            if start_vertex and end_vertex:
+                line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+                line_cursor.insertRow([line])
+
+            # Provide updates every 5% progress
+            if i % (total_features_2 // 20) == 0:
+                elapsed_time = time.time() - start_time
+                progress = (i / total_features_2) * 100
+                estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+                estimated_remaining_time = estimated_total_time - elapsed_time
+                hours, rem = divmod(estimated_remaining_time, 3600)
+                minutes, seconds = divmod(rem, 60)
+                print(f"Processed {i} of {total_features_2} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+print("Finished drawing longest axis for Simplified_JaMI_CopiedShape.")
+
+print("Longest axis lines saved to new layers.")
