@@ -1,0 +1,62 @@
+import arcpy
+from arcpy.sa import *
+
+# Set the environment settings
+arcpy.env.workspace = "X:/CountyClassifications/ClippedExportsv3/"
+arcpy.env.overwriteOutput = True
+
+# List of original land cover files and simplified land cover files
+original_files = [
+    "JacksonMI60cm_Clip.tif.tif"
+]
+
+simplified_files = [
+    "Expand36_Shrink30_JacksonMI60cm.tif.tif"
+]
+
+# Function to extract the "CountyST" part from a filename
+def extract_county_st(filename):
+    return filename.split("_")[0].replace(".tif", "")
+
+# Process each pair of original and simplified rasters
+for original_file in original_files:
+    county_st = extract_county_st(original_file)
+    
+    # Find the corresponding simplified raster file
+    matching_simplified_file = None
+    for simplified_file in simplified_files:
+        if county_st in simplified_file:
+            matching_simplified_file = simplified_file
+            break
+    
+    if matching_simplified_file:
+        print(f"Processing {county_st}...")
+        arcpy.AddMessage(f"Processing {county_st}...")
+        
+        # Load the rasters
+        original_raster = arcpy.Raster(original_file)
+        simplified_raster = arcpy.Raster(matching_simplified_file)
+        
+        # Define the class number for forested/canopied areas
+        forest_class = 3
+        
+        # Create conditional rasters to isolate forested/canopied areas
+        original_mask = Con(original_raster == forest_class, 1, 0)
+        simplified_mask = Con(simplified_raster == forest_class, 1, 0)
+        
+        # Subtract the simplified mask from the original mask to identify unique sections
+        difference_mask = original_mask - simplified_mask
+        
+        # Replace -1 values with 0
+        final_mask = Con(difference_mask == -1, 0, difference_mask)
+        
+        # Save the final mask
+        output_filename = f"X:/CountyClassifications/ClippedExportsv3/Processed_{county_st}_difference_forest_mask.tif"
+        final_mask.save(output_filename)
+        
+        print(f"Processed and saved: {output_filename}")
+        arcpy.AddMessage(f"Processed and saved: {output_filename}")
+    else:
+        print(f"No matching simplified file found for {original_file}")
+
+print("Processing complete!")
