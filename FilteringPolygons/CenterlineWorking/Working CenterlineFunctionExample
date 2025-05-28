@@ -1,0 +1,5 @@
+arcpy.topographic.PolygonToCenterline(
+    in_features="IsMI",
+    out_feature_class=r"X:\ToF Outputs\Shapefiles_v1_centerlineWorking\ToFCenterlineWorking\ToFCenterlineWorking.gdb\IsMI_PolygonToCenterline",
+    connecting_features=None
+)
