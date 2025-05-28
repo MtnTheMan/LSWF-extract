@@ -1,0 +1,313 @@
+import arcpy
+import time
+import numpy as np
+import math
+import os
+
+# Set input directories and output variables
+shapefile_dir_v2 = r"X:/ToF Outputs/Shapefiles_v1_centerlineWorking_v2"
+centerline_dir_v3 = r"X:/ToF Outputs/Shapefiles_v1_centerlineWorking_v3"
+output_gdb = r"X:/WindbreaksAllCounties/WindbreaksAllCounties.gdb"
+
+# List of county short names
+county_names = [
+    "BaWI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI","WaOH",
+    "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI","AuOH",
+    "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"
+]
+
+# Start the overall timer
+overall_start = time.time()
+
+def print_time(start, step_name):
+    end = time.time()
+    elapsed = end - start
+    hours = int(elapsed // 3600)
+    minutes = int((elapsed % 3600) // 60)
+    seconds = elapsed % 60
+    print(f"{step_name} completed in {hours}h {minutes}m {seconds:.2f}s.")
+
+# Loop through each county
+for county in county_names:
+    try:
+        # Set input feature paths for line and shape
+        input_line = os.path.join(centerline_dir_v3, f"{county}_PolygonToCenterline_v1.shp")
+        input_shape = os.path.join(shapefile_dir_v2, f"{county}.shp")
+
+        # Set county-specific prefix
+        prefix = f"{county}_"
+
+        # Copy input features before making changes
+        start = time.time()
+        copied_line = f"{output_gdb}/{prefix}CopiedLine"
+        arcpy.management.CopyFeatures(input_line, copied_line)
+        copied_shape = f"{output_gdb}/{prefix}CopiedShape"
+        arcpy.management.CopyFeatures(input_shape, copied_shape)
+        print_time(start, f"{county}: Copy Input Features")
+
+        # Step 1: Trim Line
+        start = time.time()
+        arcpy.edit.TrimLine(
+            in_features=copied_line,
+            dangle_length="30 Meters",
+            delete_shorts="DELETE_SHORT"
+        )
+        print_time(start, f"{county}: Step 1: Trim Line")
+
+        # Step 2: Pairwise Buffer
+        start = time.time()
+        negative_buffer = f"{output_gdb}/{prefix}NegativeBuffer1_2m"
+        arcpy.analysis.PairwiseBuffer(
+            in_features=copied_shape,
+            out_feature_class=negative_buffer,
+            buffer_distance_or_field="-1.2 Meters",
+            dissolve_option="NONE",
+            dissolve_field=None,
+            method="GEODESIC",
+            max_deviation="0 Meters"
+        )
+        print_time(start, f"{county}: Step 2: Pairwise Buffer")
+
+        # Step 3: Pairwise Clip
+        start = time.time()
+        clipped_output = f"{output_gdb}/{prefix}Clipped_1_2mBuffer"
+        arcpy.analysis.PairwiseClip(
+            in_features=f"{copied_line}",
+            clip_features=negative_buffer,
+            out_feature_class=clipped_output,
+            cluster_tolerance=None
+        )
+        print_time(start, f"{county}: Step 3: Pairwise Clip")
+
+        # Step 4: Trim Line Again
+        start = time.time()
+        arcpy.edit.TrimLine(
+            in_features=clipped_output,
+            dangle_length="10 Meters",
+            delete_shorts="DELETE_SHORT"
+        )
+        print_time(start, f"{county}: Step 4: Trim Line Again")
+
+        # Step 5: Feature Vertices to Points
+        start = time.time()
+        endpoints = f"{output_gdb}/{prefix}LineEndpoints"
+        arcpy.management.FeatureVerticesToPoints(clipped_output, endpoints, "BOTH_ENDS")
+        print_time(start, f"{county}: Step 5: Feature Vertices to Points")
+
+        # Step 6: Add XY Coordinates
+        start = time.time()
+        arcpy.management.AddXY(endpoints)
+        print_time(start, f"{county}: Step 6: Add XY Coordinates")
+
+        # Step 7: Count Lines Meeting at Each Point
+        start = time.time()
+        point_counts = f"{output_gdb}/{prefix}PointCounts"
+        arcpy.analysis.Statistics(endpoints, point_counts, [["OBJECTID", "COUNT"]], ["POINT_X", "POINT_Y"])
+        print_time(start, f"{county}: Step 7: Count Lines Meeting at Each Point")
+
+        # Step 8: Pairwise Dissolve Lines by FID
+        start = time.time()
+        dissolved_lines = f"{output_gdb}/{prefix}DissolvedLines"
+        arcpy.analysis.PairwiseDissolve(
+            in_features=clipped_output,
+            out_feature_class=dissolved_lines,
+            dissolve_field="FID_",
+            statistics_fields=None,
+            multi_part="MULTI_PART",
+            concatenation_separator=""
+        )
+        print_time(start, f"{county}: Step 8: Pairwise Dissolve Lines by FID")
+
+        # Step 9: Join Point Counts Back to Endpoints
+        start = time.time()
+        arcpy.management.JoinField(endpoints, "OBJECTID", point_counts, "OBJECTID", ["COUNT_OBJECTID"])
+        print_time(start, f"{county}: Step 9: Join Point Counts Back to Endpoints")
+
+        # Step 10: Split Lines at Points with More than Two Connections
+        start = time.time()
+        split_lines = f"{output_gdb}/{prefix}SplitLines"
+        arcpy.management.MakeFeatureLayer(endpoints, "endpoint_lyr")
+        arcpy.management.SelectLayerByAttribute("endpoint_lyr", "NEW_SELECTION", "COUNT_OBJECTID > 2")
+        arcpy.management.SplitLineAtPoint(dissolved_lines, "endpoint_lyr", split_lines, "5 Meters")
+        print_time(start, f"{county}: Step 10: Split Lines at Points with More than Two Connections")
+
+        # Step 11: Simplify Line
+        start = time.time()
+        simplified_line = f"{output_gdb}/{prefix}SimplifyLine_6m"
+        with arcpy.EnvManager(transferGDBAttributeProperties="NOT_TRANSFER_GDB_ATTRIBUTE_PROPERTIES"):
+            arcpy.cartography.SimplifyLine(
+                in_features=split_lines,
+                out_feature_class=simplified_line,
+                algorithm="POINT_REMOVE",
+                tolerance="0.6 Meters",
+                error_resolving_option="FLAG_ERRORS",
+                collapsed_point_option="KEEP_COLLAPSED_POINTS",
+                error_checking_option="NO_CHECK",
+                in_barriers=copied_shape,
+                error_option="RESOLVE_ERRORS"
+            )
+        print_time(start, f"{county}: Step 11: Simplify Line")
+
+        # Step 12: Calculate Angles and Right-angle Split Points
+        start = time.time()
+        
+        # Output feature class for split points and final split lines
+        split_points_fc = f"{output_gdb}/{prefix}SplitPoints90Deg"
+        final_split_lines_fc = f"{output_gdb}/{prefix}FinalSplitLines"
+        
+        # Define the threshold angles for splitting (75-115 degrees for detection)
+        min_angle_threshold = 45
+        max_angle_threshold = 135
+        min_length_threshold = 36  # Minimum length of segments on each side of the bend in meters
+        
+        # List of tolerances to use for simplification
+        tolerances = [2.5, 5, 7.5]
+        
+        # Function to calculate Euclidean distance between two points
+        def euclidean_distance(p1, p2):
+            return math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+        
+        # Function to calculate the angle between two vectors (in degrees)
+        def angle_between_vectors(v1, v2):
+            unit_v1 = v1 / np.linalg.norm(v1)
+            unit_v2 = v2 / np.linalg.norm(v2)
+            dot_product = np.dot(unit_v1, unit_v2)
+            angle_rad = np.arccos(dot_product)
+            angle_deg = np.degrees(angle_rad)
+            
+            return angle_deg
+        
+        # Split the output path and name for CreateFeatureclass
+        out_path, out_name = output_gdb, f"{prefix}SplitPoints90Deg"
+        
+        # Create an empty feature class to store the split points
+        arcpy.management.CreateFeatureclass(
+            out_path, out_name, "POINT", spatial_reference=simplified_line
+        )
+        
+        split_points_fc = f"{out_path}/{out_name}"  # Update reference to the full path
+        
+        # Count total lines and set up for status updates
+        total_lines = int(arcpy.management.GetCount(simplified_line).getOutput(0))
+        lines_processed = 0
+        split_count = 0
+        
+        # A set to hold unique split points across different tolerances
+        unique_split_points = set()
+        
+        # Function to process a polyline for a given tolerance and return split points
+        def process_line_for_tolerance(polyline, tolerance):
+            split_points = []
+            
+            # Simplify the polyline to retain only critical bends with the current tolerance
+            simplified_line = polyline.generalize(tolerance)
+            
+            parts = simplified_line.getPart(0)  # Get the first part of the polyline (assuming single part)
+            segments = []
+            prev_point = None
+        
+            # Loop through the simplified vertices
+            for i, point in enumerate(parts):
+                if prev_point is not None:
+                    # Add the current point to the segments list
+                    segments.append((point.X, point.Y))
+        
+                    if len(segments) >= 3:
+                        # We have at least 3 points, calculate vectors and angle between them
+                        p1 = segments[-3]  # The point before the previous point
+                        p2 = segments[-2]  # The previous point (potential split point)
+                        p3 = segments[-1]  # The current point
+        
+                        # Vector from p1 to p2 and p2 to p3
+                        v1 = np.array([p2[0] - p1[0], p2[1] - p1[1]])
+                        v2 = np.array([p3[0] - p2[0], p3[1] - p2[1]])
+        
+                        # Calculate the angle between these two vectors
+                        angle = angle_between_vectors(v1, v2)
+        
+                        # Calculate the lengths of segments p1->p2 and p2->p3
+                        length1 = euclidean_distance(p1, p2)
+                        length2 = euclidean_distance(p2, p3)
+        
+                        # Check if the angle is within the threshold and if both sides are long enough
+                        if (min_angle_threshold <= angle <= max_angle_threshold and
+                            length1 >= min_length_threshold and length2 >= min_length_threshold):
+        
+                            # Append the split point (p2) to the list of split points
+                            split_points.append((p2[0], p2[1]))
+        
+                prev_point = (point.X, point.Y)
+            
+            return split_points
+        
+        # Open a cursor to iterate over each polyline in the input centerline layer
+        with arcpy.da.SearchCursor(simplified_line, ["SHAPE@"]) as cursor:
+            with arcpy.da.InsertCursor(split_points_fc, ["SHAPE@XY"]) as insert_cursor_points:
+                for row in cursor:
+                    lines_processed += 1
+                    polyline = row[0]  # Get the geometry of the current centerline
+        
+                    # Process the polyline for each tolerance
+                    for tolerance in tolerances:
+                        split_points = process_line_for_tolerance(polyline, tolerance)
+                        
+                        # Add valid split points to the unique split points set
+                        for point in split_points:
+                            unique_split_points.add(point)
+        
+                # After processing all lines, insert unique split points into the points feature class
+                for point in unique_split_points:
+                    insert_cursor_points.insertRow([point])
+                    split_count += 1  # Increment count for unique split points
+        
+        print_time(start, f"{county}: Step 12: Calculate Angles and Split Points")
+
+        # Step 13: Split Lines at Right-angle Points
+        start = time.time()
+        arcpy.management.SplitLineAtPoint(simplified_line, split_points_fc, final_split_lines_fc, "0.1 Meters")
+        print_time(start, f"{county}: Step 13: Split Lines at Right-angle Points")
+
+        # Step 14: Generate Points Along Lines
+        start = time.time()
+        centerline_points = f"{output_gdb}/{prefix}CenterlinePoints"
+        arcpy.management.GeneratePointsAlongLines(final_split_lines_fc, centerline_points, "DISTANCE", Distance="0.6 Meters")
+        print_time(start, f"{county}: Step 14: Generate Points Along Lines")
+
+        # Step 15: Create Thiessen Polygons
+        start = time.time()
+        voronoi_polygons = f"{output_gdb}/{prefix}VoronoiPolygons"
+        arcpy.analysis.CreateThiessenPolygons(centerline_points, voronoi_polygons, "ALL")
+        print_time(start, f"{county}: Step 15: Create Thiessen Polygons")
+
+        # Step 16: Dissolve Voronoi Polygons by ORIG_FID
+        start = time.time()
+        dissolved_voronoi = f"{output_gdb}/{prefix}DissolvedVoronoi"
+        arcpy.management.Dissolve(voronoi_polygons, dissolved_voronoi, "ORIG_FID")
+        print_time(start, f"{county}: Step 16: Dissolve Voronoi Polygons by ORIG_FID")
+
+        # Step 17: Pairwise Intersect with Original Shape
+        start = time.time()
+        final_intersect = f"{output_gdb}/{prefix}FinalIntersect"
+        arcpy.analysis.PairwiseIntersect(
+            in_features=[dissolved_voronoi, input_shape],
+            out_feature_class=final_intersect,
+            join_attributes="ALL",
+            cluster_tolerance=None,
+            output_type="INPUT"
+        )
+        print_time(start, f"{county}: Step 17: Pairwise Intersect with Original Shape")
+
+    except arcpy.ExecuteError:
+        print(f"Error processing {county}: {arcpy.GetMessages(2)}")
+    except Exception as e:
+        print(f"General error while processing {county}: {str(e)}")
+    finally:
+        print(f"Finished processing {county}.")
+
+# Print overall time taken
+overall_end = time.time()
+elapsed = overall_end - overall_start
+hours = int(elapsed // 3600)
+minutes = int((elapsed % 3600) // 60)
+seconds = elapsed % 60
+print(f"Overall process completed in {hours}h {minutes}m {seconds:.2f}s.")
