@@ -1,0 +1,108 @@
+import arcpy
+import os
+
+# List of shapefiles with full paths
+shapefile_paths = [
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Clark_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Columbiana_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Crawford_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Defiance_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Door_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\GreenLake_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Hamilton_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Holmes_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Houghton_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Huron_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Iowa_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Isabella_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Jackson_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Kent_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Knox_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Leelanau_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Licking_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Marquette_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Mecosta_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Montcalm_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Oceana_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Oneida_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Ozaukee_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Richland_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Sauk_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Shawano_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Vernon_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Warren_OH_30cm_LargerThan250.shp",  # Wayne County special case
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Wayne_OH_30cm_LargerThan250.shp",   # Wayne County special case
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Alpena_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Athens_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Auglaize_OH_30cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Bayfield_WI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Berrien_MI_60cm_LargerThan250.shp",
+    r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Chippewa_MI_60cm_LargerThan250.shp"
+]
+
+# Define the geodatabase to export the shapefiles directly
+geodatabase = r"X:\ToF Outputs\Shapefiles_v1_centerlineWorking\ToFCenterlineWorking\ToFCenterlineWorking.gdb"
+
+# Function to generate the shortened name
+def get_shortened_name(shapefile_name):
+    # Handle the special case for Wayne County Ohio
+    if "Wayne_OH_30cm_LargerThan250" in shapefile_name:
+        return "W2OH"
+    
+    # Extract the county and state from the original name
+    parts = shapefile_name.split("_")
+    county_name = parts[0]
+    state_abbreviation = parts[1]
+
+    # Shorten the name (first two letters of county + state abbreviation)
+    return county_name[:2] + state_abbreviation
+
+# Loop through each shapefile and export its features directly into the geodatabase
+for shapefile_path in shapefile_paths:
+    try:
+        # Get the shapefile name and shortened name
+        shapefile_name = os.path.basename(shapefile_path).replace(".shp", "")
+        shortened_name = get_shortened_name(shapefile_name)
+
+        # Define the output path inside the geodatabase with the shortened name
+        out_feature_class = os.path.join(geodatabase, shortened_name)
+
+        # Notify that the process for this shapefile is starting
+        print(f"Starting export for {shapefile_name} (as {shortened_name}) to the geodatabase...")
+
+        # Export the features using the ExportFeatures tool directly to the geodatabase
+        arcpy.conversion.ExportFeatures(
+            in_features=shapefile_path,
+            out_features=out_feature_class,
+            where_clause="",
+            use_field_alias_as_name="NOT_USE_ALIAS",
+            field_mapping=(
+                'Id "Id" true true false 10 Long 0 10,First,#,' + shapefile_name +
+                ',Id,-1,-1;gridcode "gridcode" true true false 10 Long 0 10,First,#,' + shapefile_name +
+                ',gridcode,-1,-1;AREA_GEO "AREA_GEO" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',AREA_GEO,-1,-1;PERIM_GEO "PERIM_GEO" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',PERIM_GEO,-1,-1;EXT_MIN_X "EXT_MIN_X" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',EXT_MIN_X,-1,-1;EXT_MIN_Y "EXT_MIN_Y" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',EXT_MIN_Y,-1,-1;EXT_MAX_X "EXT_MAX_X" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',EXT_MAX_X,-1,-1;EXT_MAX_Y "EXT_MAX_Y" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',EXT_MAX_Y,-1,-1;Euc_Dist "Euc_Dist" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',Euc_Dist,-1,-1;Sinuos_Idx "Sinuos_Idx" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',Sinuos_Idx,-1,-1;SNFI "SNFI" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',SNFI,-1,-1;Abs_SNFI "Abs_SNFI" true true false 19 Double 0 0,First,#,' + shapefile_name +
+                ',Abs_SNFI,-1,-1'
+            ),
+            sort_field=None
+        )
+
+        # Notify that the export is complete
+        print(f"Export complete for {shapefile_name}, saved as {shortened_name} in the geodatabase.")
+
+    except arcpy.ExecuteError:
+        # Capture any errors from the arcpy tool
+        print(f"Error processing {shapefile_path}: {arcpy.GetMessages(2)}")
+    except Exception as e:
+        # Capture any general Python errors
+        print(f"General error while processing {shapefile_path}: {str(e)}")
+    finally:
+        # Final status update after each shapefile is processed
+        print(f"Finished processing {shapefile_name}.")
