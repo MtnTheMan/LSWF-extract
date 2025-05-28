@@ -1,0 +1,90 @@
+import arcpy
+from arcpy.sa import *
+
+# Set the environment settings
+arcpy.env.workspace = "X:/CountyClassifications/ClippedExportsv3/"
+arcpy.env.overwriteOutput = True
+
+# List of original land cover files and simplified land cover files
+original_files = [
+    "WayneOH30cm_Clip.tif.tif", "GreenLakeWI60cm_Clip.tif.tif", "HamiltonOH30cm_Clip.tif.tif",
+    "HolmesOH30cm_Clip.tif.tif", "HoughtonMI60cm_Clip.tif.tif", "HuronMI60cm_Clip.tif.tif",
+    "IowaWI60cm_Clip.tif.tif", "IsabellaMI60cm_Clip.tif.tif","JacksonMI60cm_Clip.tif.tif",
+    "KentMI60cm_Clip.tif.tif", "KnoxOH30cm_Clip.tif.tif", "LeelanauMI60cm_Clip.tif.tif",
+    "LickingOH30cm_Clip.tif.tif", "MarquetteWI60cm_Clip.tif.tif", "MecostaMI60cm_Clip.tif.tif",
+    "MontcalmMI60cm_Clip.tif.tif", "OceanaMI60cm_Clip.tif.tif", "OneidaWI60cm_Clip.tif.tif",
+    "OzaukeeWI60cm_Clip.tif.tif", "RichlandWI60cm_Clip.tif.tif", "SaukWI60cm_Clip.tif.tif",
+    "ShawanoWI60cm_Clip.tif.tif", "VernonWI60cm_Clip.tif.tif", "WarrenOH30cm_Clip.tif.tif",
+    "DoorWI60cm_Clip.tif.tif", "DefianceOH30cm_Clip.tif.tif", "CrawfordOH30cm_Clip.tif.tif",
+    "ColumbianaOH30cm_Clip.tif.tif", "ClarkWI60cm_Clip.tif.tif", "ChippewaMI60cm_Clip.tif.tif",
+    "BerrienMI60cm_Clip.tif.tif", "BayfieldWI60cm_Clip.tif.tif", "AuglaizeOH30cm_Clip.tif.tif",
+    "AthensOH30cm_Clip.tif.tif", "AlpenaMI60cm_Clip.tif.tif"
+]
+
+simplified_files = [
+    "Expand36_Shrink30_AlpenaMI60cm_Clip.tif.tif", "Expand36_Shrink30_BayfieldWI60cm.tif.tif",
+    "Expand36_Shrink30_BerrienMI60cm.tif.tif", "Expand36_Shrink30_ChippewaMI60cm.tif.tif",
+    "Expand36_Shrink30_ClarkWI60cm.tif.tif", "Expand36_Shrink30_DoorWI60cm.tif.tif",
+    "Expand36_Shrink30_GreenLakeWI60cm.tif.tif", "Expand36_Shrink30_HoughtonMI60cm.tif.tif",
+    "Expand36_Shrink30_HuronMI60cm.tif.tif", "Expand36_Shrink30_IowaWI60cm.tif.tif",
+    "Expand36_Shrink30_IsabellaMI60cm.tif.tif", "Expand36_Shrink30_JacksonMI60cm.tif.tif",
+    "Expand36_Shrink30_KentMI60cm.tif.tif", "Expand36_Shrink30_LeelanauMI60cm.tif.tif",
+    "Expand36_Shrink30_MarquetteWI60cm.tif.tif", "Expand36_Shrink30_MecostaMI60cm.tif.tif",
+    "Expand36_Shrink30_MontcalmMI60cm.tif.tif", "Expand36_Shrink30_OceanaMI60cm.tif.tif",
+    "Expand36_Shrink30_OneidaWI60cm.tif.tif", "Expand36_Shrink30_OzaukeeWI60cm.tif.tif",
+    "Expand36_Shrink30_RichlandWI60cm.tif.tif", "Expand36_Shrink30_SaukWI60cm.tif.tif",
+    "Expand36_Shrink30_ShawanoWI60cm.tif.tif", "Expand36_Shrink30_VernonWI60cm.tif.tif",
+    "Expand72_Shrink60_AthensOH30cm.tif.tif", "Expand72_Shrink60_AuglaizeOH30cm.tif.tif",
+    "Expand72_Shrink60_ColumbianaOH30cm.tif.tif", "Expand72_Shrink60_CrawfordOH30cm.tif.tif",
+    "Expand72_Shrink60_DefianceOH30cm.tif.tif", "Expand72_Shrink60_HamiltonOH30cm.tif.tif",
+    "Expand72_Shrink60_HolmesOH30cm_Clip.tif.tif", "Expand72_Shrink60_KnoxOH30cm_Clip.tif.tif",
+    "Expand72_Shrink60_LickingOH30cm_Clip.tif.tif", "Expand72_Shrink60_WarrenOH30cm.tif.tif",
+    "Expand72_Shrink60_WayneOH30cm_Clip.tif.tif"
+]
+
+# Function to extract the "CountyST" part from a filename
+def extract_county_st(filename):
+    return filename.split("_")[0].replace(".tif", "")
+
+# Process each pair of original and simplified rasters
+for original_file in original_files:
+    county_st = extract_county_st(original_file)
+    
+    # Find the corresponding simplified raster file
+    matching_simplified_file = None
+    for simplified_file in simplified_files:
+        if county_st in simplified_file:
+            matching_simplified_file = simplified_file
+            break
+    
+    if matching_simplified_file:
+        print(f"Processing {county_st}...")
+        arcpy.AddMessage(f"Processing {county_st}...")
+        
+        # Load the rasters
+        original_raster = arcpy.Raster(original_file)
+        simplified_raster = arcpy.Raster(matching_simplified_file)
+        
+        # Define the class number for forested/canopied areas
+        forest_class = 3
+        
+        # Create conditional rasters to isolate forested/canopied areas
+        original_mask = Con(original_raster == forest_class, 1, 0)
+        simplified_mask = Con(simplified_raster == forest_class, 1, 0)
+        
+        # Subtract the simplified mask from the original mask to identify unique sections
+        difference_mask = original_mask - simplified_mask
+        
+        # Replace -1 values with 0
+        final_mask = Con(difference_mask == -1, 0, difference_mask)
+        
+        # Save the final mask
+        output_filename = f"X:/CountyClassifications/ClippedExportsv3/{county_st}_ToF.tif"
+        final_mask.save(output_filename)
+        
+        print(f"Processed and saved: {output_filename}")
+        arcpy.AddMessage(f"Processed and saved: {output_filename}")
+    else:
+        print(f"No matching simplified file found for {original_file}")
+
+print("Processing complete!")
