@@ -1,0 +1,18 @@
+with arcpy.EnvManager(scratchWorkspace=r"X:\CountyClassifications\AllCountyClassifications_v1\AllCountyClassifications_v1.gdb"):
+    out_raster = arcpy.sa.Shrink(
+        in_raster=r"Wisconsin\Vernon\VernonWI60.tif",
+        number_cells=30,
+        zone_values=[3],
+        shrink_method="MORPHOLOGICAL"
+    )
+    out_raster.save(r"X:\CountyClassifications\AllCountyClassifications_v1\AllCountyClassifications_v1.gdb\Shrink30_VernonWI60cm")
+
+
+with arcpy.EnvManager(scratchWorkspace=r"X:\CountyClassifications\AllCountyClassifications_v1\AllCountyClassifications_v1.gdb"):
+    out_raster = arcpy.sa.Expand(
+        in_raster=r"Wisconsin\Vernon\Shrink30_VernonWI60cm_Clip",
+        number_cells=36,
+        zone_values=[3],
+        expand_method="MORPHOLOGICAL"
+    )
+    out_raster.save(r"X:\CountyClassifications\AllCountyClassifications_v1\AllCountyClassifications_v1.gdb\Expand36_Shrink30_VernonWI60cm")

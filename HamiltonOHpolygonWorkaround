@@ -1,0 +1,84 @@
+import arcpy
+import os
+import math
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Input polygon shapefile (starting from the already-created polygon file)
+polygon_layer = r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Hamilton_OH_30cm_Polygons.shp"
+
+# Output folder
+output_folder = r"X:\ToF Outputs\Shapefiles_v1_preLshaped"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Correct parse_filename function to handle underscores properly
+def parse_filename(filename):
+    basename = os.path.basename(filename)
+    
+    # Split filename by underscores, e.g., 'Hamilton_OH_30cm_Polygons.shp'
+    name_parts = basename.split('_')
+
+    # Extract county, state, and resolution based on known structure
+    county = name_parts[0]
+    state = name_parts[1]
+    resolution = name_parts[2].replace("cm", "cm")  # Keep resolution as is
+    
+    return county, state, resolution
+
+# Extract county, state, and resolution from the input polygon shapefile
+county, state, resolution = parse_filename(polygon_layer)
+print(f"Processing {county}, {state}, {resolution}")
+
+# Step 1: Remove polygons with gridcode 0 (non-ToFs)
+non_tof_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_NoGridcode0.shp")
+arcpy.analysis.Select(polygon_layer, non_tof_layer, where_clause="gridcode = 1")
+
+# Step 2: Remove polygons smaller than 250 m^2
+large_polygons_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_LargerThan250.shp")
+arcpy.management.AddGeometryAttributes(Input_Features=non_tof_layer, Geometry_Properties=["AREA_GEODESIC"], Area_Unit="SQUARE_METERS")
+arcpy.analysis.Select(non_tof_layer, large_polygons_layer, where_clause="AREA_GEO >= 250")
+
+# Step 3: Calculate Perimeter, Bounding Box, and Euclidean Distance
+arcpy.management.AddGeometryAttributes(Input_Features=large_polygons_layer, Geometry_Properties=["PERIMETER_LENGTH_GEODESIC", "EXTENT"])
+
+arcpy.AddField_management(large_polygons_layer, "Euc_Dist", "DOUBLE")
+with arcpy.da.UpdateCursor(large_polygons_layer, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "Euc_Dist"]) as cursor:
+    for row in cursor:
+        min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+        euclidean_dist = math.sqrt((max_y - min_y) ** 2 + (max_x - min_x) ** 2)
+        row[4] = euclidean_dist
+        cursor.updateRow(row)
+
+# Step 4: Generate Windbreak Sinuosity Index
+arcpy.AddField_management(large_polygons_layer, "Sinuos_Idx", "DOUBLE")
+with arcpy.da.UpdateCursor(large_polygons_layer, ["PERIM_GEO", "Euc_Dist", "Sinuos_Idx"]) as cursor:
+    for row in cursor:
+        perimeter = row[0]
+        euclidean_dist = row[1]
+        sinuosity_index = (0.5 * perimeter) / euclidean_dist
+        row[2] = sinuosity_index
+        cursor.updateRow(row)
+
+# Step 5: Generate SNFI
+arcpy.AddField_management(large_polygons_layer, "SNFI", "DOUBLE")
+with arcpy.da.UpdateCursor(large_polygons_layer, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "SNFI"]) as cursor:
+    for row in cursor:
+        min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+        ns_erosion = abs(max_y - min_y) / abs(max_x - min_x)
+        ew_erosion = abs(max_x - min_x) / abs(max_y - min_y)
+        snfi = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion)
+        row[4] = snfi
+        cursor.updateRow(row)
+
+# Step 6: Create an absolute value of SNFI
+arcpy.AddField_management(large_polygons_layer, "Abs_SNFI", "DOUBLE")
+arcpy.CalculateField_management(large_polygons_layer, "Abs_SNFI", "abs(!SNFI!)", "PYTHON3")
+
+# Step 7: Remove polygons based on SNFI thresholds
+filtered_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_Filtered.shp")
+arcpy.analysis.Select(large_polygons_layer, filtered_layer, where_clause=f"Abs_SNFI >= {snfi_threshold}")
+
+print(f"Finished processing {county}, {state}, {resolution}. Results saved to {output_folder}.")

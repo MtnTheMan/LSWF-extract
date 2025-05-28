@@ -1,0 +1,132 @@
+import arcpy
+import os
+import math
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# List of input raster files
+raster_files = [
+   # r"X:\CountyClassifications\ClippedExportsv3\IsabellaMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\JacksonMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\KentMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\KnoxOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\LeelanauMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\LickingOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\MarquetteWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\MecostaMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\MontcalmMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\OceanaMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\OneidaWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\OzaukeeWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\RichlandWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\SaukWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\ShawanoWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\VernonWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\WarrenOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\WayneOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\AlpenaMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\AthensOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\AuglaizeOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\BayfieldWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\BerrienMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\ChippewaMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\ClarkWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\ColumbianaOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\CrawfordOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\DefianceOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\DoorWI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\GreenLakeWI60cm_ToF.tif",
+     r"X:\CountyClassifications\ClippedExportsv3\HamiltonOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\HolmesOH30cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\HoughtonMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\HuronMI60cm_ToF.tif",
+   # r"X:\CountyClassifications\ClippedExportsv3\IowaWI60cm_ToF.tif"
+]
+
+# Output folder
+output_folder = r"X:\ToF Outputs\Shapefiles_v1_preLshaped"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to extract county, state, and resolution from file name
+def parse_filename(filename):
+    basename = os.path.basename(filename)
+    county_state_res = basename.split('_ToF')[0]
+    
+    # Assume the last 6 characters are the resolution (e.g., 60cm, 30cm)
+    county = county_state_res[:-6]
+    state = county_state_res[-6:-4]
+    resolution = county_state_res[-4:]
+
+    return county, state, resolution
+
+# Processing each raster
+for raster_file in raster_files:
+    county, state, resolution = parse_filename(raster_file)
+    
+    print(f"Processing {county}, {state}, {resolution}")
+    
+    # Step 1: Polygonize the raster
+    polygon_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_Polygons.shp")
+    arcpy.conversion.RasterToPolygon(
+        in_raster=raster_file, 
+        out_polygon_features=polygon_layer, 
+        simplify="NO_SIMPLIFY", 
+        raster_field="Value", 
+        #create_multipart_features="SINGLE_OUTER_PART"
+    )
+    
+    # Step 2: Remove polygons with gridcode 0 (non-ToFs)
+    non_tof_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_NoGridcode0.shp")
+    arcpy.analysis.Select(polygon_layer, non_tof_layer, where_clause="gridcode = 1")
+
+    # Step 3: Remove polygons smaller than 250 m^2
+    large_polygons_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_LargerThan250.shp")
+    arcpy.management.AddGeometryAttributes(Input_Features=non_tof_layer, Geometry_Properties=["AREA_GEODESIC"], Area_Unit="SQUARE_METERS")
+    arcpy.analysis.Select(non_tof_layer, large_polygons_layer, where_clause="AREA_GEO >= 250")
+
+    # Step 4: Calculate Perimeter, Bounding Box, and Euclidean Distance
+    arcpy.management.AddGeometryAttributes(Input_Features=large_polygons_layer, Geometry_Properties=["PERIMETER_LENGTH_GEODESIC", "EXTENT"])
+    
+    arcpy.AddField_management(large_polygons_layer, "Euc_Dist", "DOUBLE")
+    with arcpy.da.UpdateCursor(large_polygons_layer, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "Euc_Dist"]) as cursor:
+        for row in cursor:
+            min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+            euclidean_dist = math.sqrt((max_y - min_y) ** 2 + (max_x - min_x) ** 2)
+            row[4] = euclidean_dist
+            cursor.updateRow(row)
+
+    # Step 5: Generate Windbreak Sinuosity Index
+    arcpy.AddField_management(large_polygons_layer, "Sinuos_Idx", "DOUBLE")
+    with arcpy.da.UpdateCursor(large_polygons_layer, ["PERIM_GEO", "Euc_Dist", "Sinuos_Idx"]) as cursor:
+        for row in cursor:
+            perimeter = row[0]
+            euclidean_dist = row[1]
+            sinuosity_index = (0.5 * perimeter) / euclidean_dist
+            row[2] = sinuosity_index
+            cursor.updateRow(row)
+
+    # Step 6: Generate SNFI
+    arcpy.AddField_management(large_polygons_layer, "SNFI", "DOUBLE")
+    with arcpy.da.UpdateCursor(large_polygons_layer, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "SNFI"]) as cursor:
+        for row in cursor:
+            min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+            ns_erosion = abs(max_y - min_y) / abs(max_x - min_x)
+            ew_erosion = abs(max_x - min_x) / abs(max_y - min_y)
+            snfi = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion)
+            row[4] = snfi
+            cursor.updateRow(row)
+
+    # Step 7: Create an absolute value of SNFI
+    arcpy.AddField_management(large_polygons_layer, "Abs_SNFI", "DOUBLE")
+    arcpy.CalculateField_management(large_polygons_layer, "Abs_SNFI", "abs(!SNFI!)", "PYTHON3")
+    # Step 8: Remove polygons based on SNFI thresholds
+    filtered_layer = os.path.join(output_folder, f"{county}_{state}_{resolution}_Filtered.shp")
+    arcpy.analysis.Select(large_polygons_layer, filtered_layer, where_clause=f"Abs_SNFI >= {snfi_threshold}")
+
+    print(f"Finished processing {county}, {state}, {resolution}. Results saved to {output_folder}.")
+
+print("All processing complete.")
+
