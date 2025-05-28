@@ -1,0 +1,9 @@
+with arcpy.EnvManager(outputZFlag="Disabled", outputMFlag="Disabled"):
+    arcpy.conversion.RasterToPolygon(
+        in_raster=r"X:\CountyClassifications\ClippedExportsv3\HuronMI60cm_ToF.tif",
+        out_polygon_features=r"X:\ToF Outputs\Shapefiles_v1_preLshaped\Huron_MI_60cm_Polygons.shp",
+        simplify="NO_SIMPLIFY",
+        raster_field="Value",
+        create_multipart_features="SINGLE_OUTER_PART",
+        max_vertices_per_feature=None
+    )
