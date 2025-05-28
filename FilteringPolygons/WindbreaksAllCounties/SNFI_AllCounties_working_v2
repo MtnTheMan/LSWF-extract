@@ -1,0 +1,369 @@
+# CURRENTLY SET UP  TO SKIP SIMPLIFICATION AND STEP 1
+
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# County codes
+county_names = ["BaWI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"]
+
+# Directories
+centerline_working_dir = r"X:/ToF Outputs/Shapefiles_v1_centerlineWorking_v2"
+voronoi_outputs_dir = r"X:/ToF Outputs/VoronoiOutputs"
+output_folder = r"X:/WindbreaksAllCounties/WindbreaksAllCounties.gdb"
+
+# SNFI threshold for filtering
+snfi_threshold = 0.8
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Function to provide progress updates
+def print_progress(i, total_features, start_time):
+    elapsed_time = time.time() - start_time
+    progress = (i / total_features) * 100
+    estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+    estimated_remaining_time = estimated_total_time - elapsed_time
+    hours, rem = divmod(estimated_remaining_time, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print(f"Processed {i} of {total_features} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Process each county
+for county_code in county_names:
+    print(f"Processing county: {county_code}")
+
+    # Input polygon paths
+    polygon_voronoi = os.path.join(voronoi_outputs_dir, f"{county_code}_FinalIntersect.shp")
+    polygon_250m2 = os.path.join(centerline_working_dir, f"{county_code}.shp")
+
+    # Simplify the polygons to reduce processing time
+    simplified_polygon_voronoi = os.path.join(output_folder, f"Simplified_{county_code}_FinalIntersect")
+    simplified_polygon_250m2 = os.path.join(output_folder, f"Simplified_{county_code}_CopiedShape")
+
+#     # Delete layers if they already exist
+#     if arcpy.Exists(simplified_polygon_voronoi):
+#         arcpy.Delete_management(simplified_polygon_voronoi)
+#     if arcpy.Exists(simplified_polygon_250m2):
+#         arcpy.Delete_management(simplified_polygon_250m2)
+
+#     # Simplify polygons using the Simplify Polygon tool
+#     print("Simplifying polygons to reduce processing time...")
+#     arcpy.cartography.SimplifyPolygon(polygon_voronoi, simplified_polygon_voronoi, "POINT_REMOVE", 0.6)
+#     arcpy.cartography.SimplifyPolygon(polygon_250m2, simplified_polygon_250m2, "POINT_REMOVE", 0.6)
+
+#     # Create a new layer to store the longest distance lines for both polygons
+#     longest_lines_layer_voronoi = os.path.join(output_folder, f"Longest_Lines_Simplified_{county_code}_FinalIntersect")
+#     longest_lines_layer_250m2 = os.path.join(output_folder, f"Longest_Lines_Simplified_{county_code}_CopiedShape")
+
+#     # Delete layers if they already exist
+#     if arcpy.Exists(longest_lines_layer_voronoi):
+#         arcpy.Delete_management(longest_lines_layer_voronoi)
+#     if arcpy.Exists(longest_lines_layer_250m2):
+#         arcpy.Delete_management(longest_lines_layer_250m2)
+
+#     # Create new feature classes for storing longest axis lines
+#     arcpy.CreateFeatureclass_management(output_folder, f"Longest_Lines_Simplified_{county_code}_FinalIntersect", "POLYLINE", spatial_reference=polygon_voronoi)
+#     arcpy.CreateFeatureclass_management(output_folder, f"Longest_Lines_Simplified_{county_code}_CopiedShape", "POLYLINE", spatial_reference=polygon_250m2)
+
+#     # Process the first simplified polygon to draw the longest axis
+#     print(f"Drawing longest axis for each feature in Simplified_{county_code}_FinalIntersect...")
+
+#     # Get total feature count for progress tracking
+#     total_features_voronoi = int(arcpy.GetCount_management(simplified_polygon_voronoi).getOutput(0))
+#     start_time = time.time()
+
+#     with arcpy.da.SearchCursor(simplified_polygon_voronoi, ["SHAPE@"]) as cursor:
+#         with arcpy.da.InsertCursor(longest_lines_layer_voronoi, ["SHAPE@"]) as line_cursor:
+#             for i, row in enumerate(cursor, start=1):
+#                 geometry = row[0]
+#                 start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+#                 # Draw the longest distance line
+#                 if start_vertex and end_vertex:
+#                     line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+#                     line_cursor.insertRow([line])
+
+#                 # Provide updates every 5% progress
+#                 if i % (total_features_voronoi // 20) == 0:
+#                     print_progress(i, total_features_voronoi, start_time)
+
+#     print(f"Finished drawing longest axis for Simplified_{county_code}_FinalIntersect.")
+
+#     # Process the second simplified polygon to draw the longest axis
+#     print(f"Drawing longest axis for each feature in Simplified_{county_code}_CopiedShape...")
+
+#     # Get total feature count for progress tracking
+#     total_features_250m2 = int(arcpy.GetCount_management(simplified_polygon_250m2).getOutput(0))
+#     start_time = time.time()
+
+#     with arcpy.da.SearchCursor(simplified_polygon_250m2, ["SHAPE@"]) as cursor:
+#         with arcpy.da.InsertCursor(longest_lines_layer_250m2, ["SHAPE@"]) as line_cursor:
+#             for i, row in enumerate(cursor, start=1):
+#                 geometry = row[0]
+#                 start_vertex, end_vertex, longest_axis = find_longest_axis(geometry)
+
+#                 # Draw the longest distance line
+#                 if start_vertex and end_vertex:
+#                     line = arcpy.Polyline(arcpy.Array([start_vertex, end_vertex]), geometry.spatialReference)
+#                     line_cursor.insertRow([line])
+
+#                 # Provide updates every 5% progress
+#                 if i % (total_features_250m2 // 20) == 0:
+#                     print_progress(i, total_features_250m2, start_time)
+
+#     print(f"Finished drawing longest axis for Simplified_{county_code}_CopiedShape.")
+
+#     # Step 1: Calculate Perimeter, Bounding Box, and Euclidean Distance for both layers
+#     print(f"1: Calculating Perimeter, Bounding Box, and Euclidean Distance for {county_code}...")
+
+#     # Adding geometry attributes for voronoi polygons
+#     arcpy.management.AddGeometryAttributes(Input_Features=polygon_voronoi, Geometry_Properties=["PERIMETER_LENGTH_GEODESIC", "EXTENT"])
+#     extent_fields = ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "Euc_Dist"]
+#     for field in extent_fields:
+#         if field not in [f.name for f in arcpy.ListFields(polygon_voronoi)]:
+#             arcpy.AddField_management(polygon_voronoi, field, "DOUBLE")
+#     with arcpy.da.UpdateCursor(polygon_voronoi, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "Euc_Dist"]) as cursor:
+#         for i, row in enumerate(cursor, start=1):
+#             min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+#             euclidean_dist = math.sqrt((max_y - min_y) ** 2 + (max_x - min_x) ** 2)
+#             row[4] = euclidean_dist
+#             cursor.updateRow(row)
+
+#     # Adding geometry attributes for copied shape polygons
+#     arcpy.management.AddGeometryAttributes(Input_Features=polygon_250m2, Geometry_Properties=["PERIMETER_LENGTH_GEODESIC", "EXTENT"])
+#     for field in extent_fields:
+#         if field not in [f.name for f in arcpy.ListFields(polygon_250m2)]:
+#             arcpy.AddField_management(polygon_250m2, field, "DOUBLE")
+#     with arcpy.da.UpdateCursor(polygon_250m2, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "Euc_Dist"]) as cursor:
+#         for i, row in enumerate(cursor, start=1):
+#             min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+#             euclidean_dist = math.sqrt((max_y - min_y) ** 2 + (max_x - min_x) ** 2)
+#             row[4] = euclidean_dist
+#             cursor.updateRow(row)
+
+#     print(f"Finished calculating Perimeter, Bounding Box, and Euclidean Distance for {county_code}.")
+
+    # Step 2: Calculate SNFI for the Final intersect file (Coordinate Grid Based)
+    print(f"2: Calculating SNFI for the Final intersect file for {county_code} (Coordinate Grid Based)...")
+    arcpy.AddField_management(polygon_voronoi, "vSNFI", "DOUBLE")
+    with arcpy.da.UpdateCursor(polygon_voronoi, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "vSNFI"]) as cursor:
+        for row in cursor:
+            min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+            ns_erosion = abs(max_y - min_y) / abs(max_x - min_x) if abs(max_x - min_x) != 0 else 0
+            ew_erosion = abs(max_x - min_x) / abs(max_y - min_y) if abs(max_y - min_y) != 0 else 0
+            snfi = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion) if (ns_erosion + ew_erosion) != 0 else 0
+            row[4] = snfi
+            cursor.updateRow(row)
+    print(f"Finished calculating SNFI for the Final intersect file for {county_code}.")
+
+    # Step 3: Calculate SNFI for the copied shape layer (Coordinate Grid Based)
+    print(f"3: Calculating SNFI for the copied shape layer for {county_code} (Coordinate Grid Based)...")
+    arcpy.AddField_management(polygon_250m2, "dSNFI", "DOUBLE")
+    with arcpy.da.UpdateCursor(polygon_250m2, ["EXT_MIN_X", "EXT_MAX_X", "EXT_MIN_Y", "EXT_MAX_Y", "dSNFI"]) as cursor:
+        for row in cursor:
+            min_x, max_x, min_y, max_y = row[0], row[1], row[2], row[3]
+            ns_erosion = abs(max_y - min_y) / abs(max_x - min_x) if abs(max_x - min_x) != 0 else 0
+            ew_erosion = abs(max_x - min_x) / abs(max_y - min_y) if abs(max_y - min_y) != 0 else 0
+            snfi = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion) if (ns_erosion + ew_erosion) != 0 else 0
+            row[4] = snfi
+            cursor.updateRow(row)
+    print(f"Finished calculating SNFI for the copied shape layer for {county_code}.")
+
+    # Step 4: Calculate SNFI along the longest axis for the Final intersect file (Shape Oriented)
+    print(f"4: Calculating SNFI along the longest axis for the Final intersect file for {county_code} (Shape Oriented)...")
+    arcpy.AddField_management(simplified_polygon_voronoi, "vSNFI_Axis", "DOUBLE")
+    with arcpy.da.UpdateCursor(simplified_polygon_voronoi, ["SHAPE@", "vSNFI_Axis"]) as cursor:
+        total_features = int(arcpy.GetCount_management(simplified_polygon_voronoi).getOutput(0))
+        start_time = time.time()
+        for i, poly_row in enumerate(cursor, start=1):
+            polygon = poly_row[0]
+            # Calculate bounding box dimensions relative to the longest axis
+            start_vertex, end_vertex, _ = find_longest_axis(polygon)
+            angle = math.atan2(end_vertex.Y - start_vertex.Y, end_vertex.X - start_vertex.X)
+            cos_angle = math.cos(angle)
+            sin_angle = math.sin(angle)
+
+            # Project vertices onto the rotated coordinate system
+            vertices = [pnt for part in polygon for pnt in part if pnt]
+            min_ns, max_ns, min_ew, max_ew = float('inf'), float('-inf'), float('inf'), float('-inf')
+            for vertex in vertices:
+                ns_projection = vertex.X * cos_angle + vertex.Y * sin_angle
+                ew_projection = vertex.Y * cos_angle - vertex.X * sin_angle
+                min_ns = min(min_ns, ns_projection)
+                max_ns = max(max_ns, ns_projection)
+                min_ew = min(min_ew, ew_projection)
+                max_ew = max(max_ew, ew_projection)
+
+            # Calculate NS and EW erosion directly from the bounding box projections
+            ns_erosion = (max_ns - min_ns) / (max_ew - min_ew) if (max_ew - min_ew) != 0 else 0
+            ew_erosion = (max_ew - min_ew) / (max_ns - min_ns) if (max_ns - min_ns) != 0 else 0
+            snfi_long_axis = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion) if (ns_erosion + ew_erosion) != 0 else 0
+            poly_row[1] = snfi_long_axis
+            cursor.updateRow(poly_row)
+
+            # Provide updates every 5% progress
+            if i % (total_features // 20) == 0:
+                print_progress(i, total_features, start_time)
+    print(f"Finished calculating SNFI along the longest axis for the Final intersect file for {county_code}.")
+    
+    # Step 5: Calculate SNFI along the longest axis for the copied shape file (Shape Oriented)
+    print(f"5: Calculating SNFI along the longest axis for the copied shape file for {county_code} (Shape Oriented)...")
+    arcpy.AddField_management(simplified_polygon_250m2, "dSNFI_Axis", "DOUBLE")
+    with arcpy.da.UpdateCursor(simplified_polygon_250m2, ["SHAPE@", "dSNFI_Axis"]) as cursor:
+        total_features = int(arcpy.GetCount_management(simplified_polygon_250m2).getOutput(0))
+        start_time = time.time()
+        for i, poly_row in enumerate(cursor, start=1):
+            polygon = poly_row[0]
+
+            # Calculate bounding box dimensions relative to the longest axis
+            start_vertex, end_vertex, _ = find_longest_axis(polygon)
+            if not start_vertex or not end_vertex or start_vertex.equals(end_vertex):
+                poly_row[1] = 0
+                cursor.updateRow(poly_row)
+                continue
+
+            angle = math.atan2(end_vertex.Y - start_vertex.Y, end_vertex.X - start_vertex.X)
+            cos_angle = math.cos(angle)
+            sin_angle = math.sin(angle)
+
+            # Project vertices onto the rotated coordinate system
+            vertices = [pnt for part in polygon for pnt in part if pnt]
+            min_ns, max_ns, min_ew, max_ew = float('inf'), float('-inf'), float('inf'), float('-inf')
+            for vertex in vertices:
+                ns_projection = vertex.X * cos_angle + vertex.Y * sin_angle
+                ew_projection = vertex.Y * cos_angle - vertex.X * sin_angle
+                min_ns = min(min_ns, ns_projection)
+                max_ns = max(max_ns, ns_projection)
+                min_ew = min(min_ew, ew_projection)
+                max_ew = max(max_ew, ew_projection)
+
+            # Calculate NS and EW erosion directly from the bounding box projections
+            ns_erosion = (max_ns - min_ns) / (max_ew - min_ew) if (max_ew - min_ew) > 1e-10 else 0
+            ew_erosion = (max_ew - min_ew) / (max_ns - min_ns) if (max_ns - min_ns) > 1e-10 else 0
+
+            snfi_long_axis = (ns_erosion - ew_erosion) / (ns_erosion + ew_erosion) if (ns_erosion + ew_erosion) > 1e-10 else 0
+
+            # Update the feature with the SNFI value
+            poly_row[1] = snfi_long_axis
+            cursor.updateRow(poly_row)
+
+            # Provide updates every 5% progress
+            if i % (total_features // 20) == 0:
+                print_progress(i, total_features, start_time)
+
+    print(f"Finished calculating SNFI along the longest axis for the copied shape file for {county_code}.")
+    
+    # Step 6: Transfer SNFI values from simplified shapes to original polygons
+    print("6: Transferring SNFI values from simplified shapes to original polygons...")
+
+    # Add the field to the correct layer and check if it was added correctly
+    arcpy.AddField_management(polygon_voronoi, "vSNFI_Axis", "DOUBLE")
+    for attempt in range(5):
+        fields = [f.name for f in arcpy.ListFields(polygon_voronoi)]
+        if "vSNFI_Axis" in fields:
+            print("vSNFI_Axis field found after adding.")
+            break
+        time.sleep(1)  # Wait for 1 second before checking again
+    else:
+        raise RuntimeError("Field vSNFI_Axis not found after 5 attempts")
+
+    # Print the fields to confirm they are present
+    fields_after_adding = [f.name for f in arcpy.ListFields(polygon_voronoi)]
+    print(f"Fields in polygon_voronoi after adding vSNFI_Axis: {fields_after_adding}")
+
+    # Proceed to transfer values
+    try:
+        with arcpy.da.SearchCursor(simplified_polygon_voronoi, ["OID@", "vSNFI_Axis"]) as simp_cursor:
+            simplified_snfi = {row[0]: row[1] for row in simp_cursor}
+    except RuntimeError as e:
+        print("Error while creating SearchCursor for simplified_polygon_voronoi:", e)
+        raise
+
+    with arcpy.da.UpdateCursor(polygon_voronoi, ["OID@", "vSNFI_Axis"]) as orig_cursor:
+        for row in orig_cursor:
+            if row[0] in simplified_snfi and simplified_snfi[row[0]] is not None:
+                row[1] = simplified_snfi[row[0]]
+                orig_cursor.updateRow(row)
+    print(f"Finished transferring SNFI values to original polygons for {county_code}.")
+
+    # Step 6.5: Transfer SNFI values from simplified shapes to original polygons
+    print("6.5: Transferring SNFI values from simplified shapes to original polygons...")
+
+    # Add the field to the original layer
+    arcpy.AddField_management(polygon_250m2, "dSNFI_Axis", "DOUBLE")
+
+    # Use the SearchCursor on the simplified layer to collect SNFI values
+    with arcpy.da.SearchCursor(simplified_polygon_250m2, ["OID@", "dSNFI_Axis"]) as simp_cursor:
+        simplified_snfi = {row[0]: row[1] for row in simp_cursor if row[1] is not None}
+
+    # Transfer the values from the simplified layer to the original polygons
+    with arcpy.da.UpdateCursor(polygon_250m2, ["OID@", "dSNFI_Axis"]) as orig_cursor:
+        for row in orig_cursor:
+            if row[0] in simplified_snfi:
+                row[1] = simplified_snfi[row[0]]
+                orig_cursor.updateRow(row)
+
+    print(f"Finished transferring SNFI values to original polygons for {county_code}.")
+
+    # Step 7: Create an absolute value of SNFI for both layers (Coordinate Based)
+    print("7: Creating an absolute value of SNFI for both layers (Coordinate Based)...")
+    arcpy.AddField_management(polygon_voronoi, "Abs_vSNFI", "DOUBLE")
+    arcpy.CalculateField_management(polygon_voronoi, "Abs_vSNFI", "abs(!vSNFI!)", "PYTHON3")
+
+    arcpy.AddField_management(polygon_250m2, "Abs_dSNFI", "DOUBLE")
+    arcpy.CalculateField_management(polygon_250m2, "Abs_dSNFI", "abs(!dSNFI!)", "PYTHON3")
+    print(f"Finished creating absolute SNFI values for {county_code}.")
+
+    # Step 8: Take the maximum SNFI value from both Coordinate Based and Shape Oriented for each feature
+    print("8: Taking the maximum SNFI value from both Coordinate Based and Shape Oriented for each feature...")
+    arcpy.AddField_management(polygon_voronoi, "Max_vSNFI", "DOUBLE")
+    with arcpy.da.UpdateCursor(polygon_voronoi, ["Abs_vSNFI", "vSNFI_Axis", "Max_vSNFI"]) as cursor:
+        for row in cursor:
+            if row[0] is not None and row[1] is not None:
+                row[2] = max(row[0], row[1])
+            elif row[0] is not None:
+                row[2] = row[0]
+            elif row[1] is not None:
+                row[2] = row[1]
+            cursor.updateRow(row)
+
+    arcpy.AddField_management(polygon_250m2, "Max_dSNFI", "DOUBLE")
+    with arcpy.da.UpdateCursor(polygon_250m2, ["Abs_dSNFI", "dSNFI_Axis", "Max_dSNFI"]) as cursor:
+        for row in cursor:
+            if row[0] is not None and row[1] is not None:
+                row[2] = max(row[0], row[1])
+            elif row[0] is not None:
+                row[2] = row[0]
+            elif row[1] is not None:
+                row[2] = row[1]
+            cursor.updateRow(row)
+    print(f"Finished taking the maximum SNFI value for each feature for {county_code}.")
+    
+    # Step 9: Remove polygons based on SNFI thresholds for both layers
+    print("9: Removing polygons based on SNFI thresholds...")
+    filtered_voronoi_layer = os.path.join(output_folder, f"{county_code}_FinalIntersect_FilteredSNFI")
+    arcpy.analysis.Select(polygon_voronoi, filtered_voronoi_layer, where_clause=f"Max_vSNFI >= {snfi_threshold} AND AREA_GEO >= 250")
+    
+    filtered_250m2_layer = os.path.join(output_folder, f"{county_code}_CopiedShape_FilteredSNFI")
+    arcpy.analysis.Select(polygon_250m2, filtered_250m2_layer, where_clause=f"Max_dSNFI >= {snfi_threshold} AND AREA_GEO >= 250")
+    
+    print(f"Finished processing SNFI calculations and filtering for {county_code}. Results saved to output folder.")
