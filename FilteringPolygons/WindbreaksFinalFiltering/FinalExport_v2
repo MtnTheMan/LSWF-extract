@@ -1,0 +1,74 @@
+import arcpy
+import os
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Directories
+base_files_output_dir = r"X:/WindbreaksAllCounties/WindbreakOutputs(DataFiles)"
+final_files_output_dir = r"X:/WindbreaksAllCounties/WindbreakOutputs(Final)"
+centerline_working_dir = r"X:/ToF Outputs/Shapefiles_v1_centerlineWorking_v2"
+voronoi_outputs_dir = r"X:/ToF Outputs/VoronoiOutputs"
+gdb_path = r"X:/WindbreaksAllCounties/WindbreaksAllCounties.gdb"
+final_filtering_gdb_path = r"X:/WindbreaksAllCounties/WindbreaksFinalFiltering/WindbreaksFinalFiltering.gdb"
+filtered_outputs_dir = r"X:/WindbreaksAllCounties/Windbreak Outputs"
+
+# County codes
+county_names = [
+    "BaWI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"
+]
+
+# Ensure output directories exist
+if not os.path.exists(base_files_output_dir):
+    os.makedirs(base_files_output_dir)
+
+if not os.path.exists(final_files_output_dir):
+    os.makedirs(final_files_output_dir)
+
+# Loop through each county and export files with proper naming
+for county_code in county_names:
+    print(f"Processing county: {county_code}")
+    
+    # Base Files to be saved to "X:/WindbreaksAllCounties/WindbreakOutputs(DataFiles)"
+    simplified_copied_shape_path = os.path.join(gdb_path, f"Simplified_{county_code}_CopiedShape")
+    simplified_final_intersect_path = os.path.join(gdb_path, f"Simplified_{county_code}_FinalIntersect")
+    original_file_path = os.path.join(centerline_working_dir, f"{county_code}.shp")
+    voronoi_file_path = os.path.join(voronoi_outputs_dir, f"{county_code}_FinalIntersect.shp")
+
+    # Export paths with new names
+    simplified_copied_shape_export_path = os.path.join(base_files_output_dir, f"Simplified_{county_code}_Default.shp")
+    simplified_final_intersect_export_path = os.path.join(base_files_output_dir, f"Simplified_{county_code}_FinalVoronoi.shp")
+    original_export_path = os.path.join(base_files_output_dir, f"{county_code}.shp")
+    voronoi_export_path = os.path.join(base_files_output_dir, f"{county_code}_VoronoiIntersect.shp")
+
+    # Export base files
+    if arcpy.Exists(simplified_copied_shape_path):
+        arcpy.management.CopyFeatures(simplified_copied_shape_path, simplified_copied_shape_export_path)
+    if arcpy.Exists(simplified_final_intersect_path):
+        arcpy.management.CopyFeatures(simplified_final_intersect_path, simplified_final_intersect_export_path)
+    if arcpy.Exists(original_file_path):
+        arcpy.management.CopyFeatures(original_file_path, original_export_path)
+    if arcpy.Exists(voronoi_file_path):
+        arcpy.management.CopyFeatures(voronoi_file_path, voronoi_export_path)
+
+    # FinalWindbreaks files to save to "X:/WindbreaksAllCounties/WindbreakOutputs(Final)"
+    final_windbreaks_path = os.path.join(final_filtering_gdb_path, f"{county_code}_FinalWindbreaks")
+    final_voronoi_filtered_path = os.path.join(filtered_outputs_dir, f"{county_code}_VoronoiFiltered.shp")
+    final_parent_filtered_path = os.path.join(filtered_outputs_dir, f"{county_code}_ParentFiltered.shp")
+
+    # Export paths with new names
+    final_windbreaks_export_path = os.path.join(final_files_output_dir, f"{county_code}_FinalWindbreaks.shp")
+    final_voronoi_filtered_export_path = os.path.join(final_files_output_dir, f"{county_code}_FinalVoronoiFiltered.shp")
+    final_parent_filtered_export_path = os.path.join(final_files_output_dir, f"{county_code}_FinalDefaultFiltered.shp")
+
+    # Export final windbreaks files
+    if arcpy.Exists(final_windbreaks_path):
+        arcpy.management.CopyFeatures(final_windbreaks_path, final_windbreaks_export_path)
+    if arcpy.Exists(final_voronoi_filtered_path):
+        arcpy.management.CopyFeatures(final_voronoi_filtered_path, final_voronoi_filtered_export_path)
+    if arcpy.Exists(final_parent_filtered_path):
+        arcpy.management.CopyFeatures(final_parent_filtered_path, final_parent_filtered_export_path)
+
+    print(f"Finished processing and exporting files for {county_code}")
+    
+print("All counties processed and files exported.")
