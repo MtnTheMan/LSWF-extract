@@ -1,0 +1,112 @@
+import arcpy
+import os
+import math
+import time
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+arcpy.CheckOutExtension("Spatial")  # Check out the Spatial Analyst extension
+
+# County codes
+county_names = ["BaWI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"]
+
+# Directories
+voronoi_outputs_dir = r"X:/ToF Outputs/VoronoiOutputs"
+output_folder = r"X:/WindbreaksAllCounties/WindbreaksAllCounties.gdb"
+
+# SNFI threshold (not used in this script)
+snfi_threshold = 0
+
+# Function to find the longest Euclidean dimension between polygon vertices
+def find_longest_axis(geometry):
+    vertices = [pnt for part in geometry for pnt in part if pnt]
+    longest_distance = 0
+    start_vertex, end_vertex = None, None
+
+    # Loop through all pairs of vertices
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            p1, p2 = vertices[i], vertices[j]
+            distance = math.sqrt((p1.X - p2.X) ** 2 + (p1.Y - p2.Y) ** 2)
+            if distance > longest_distance:
+                longest_distance = distance
+                start_vertex, end_vertex = p1, p2
+
+    return start_vertex, end_vertex, longest_distance
+
+# Function to provide progress updates
+def print_progress(i, total_features, start_time):
+    elapsed_time = time.time() - start_time
+    progress = (i / total_features) * 100
+    estimated_total_time = (elapsed_time / progress) * 100 if progress > 0 else 0
+    estimated_remaining_time = estimated_total_time - elapsed_time
+    hours, rem = divmod(estimated_remaining_time, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print(f"Processed {i} of {total_features} features ({progress:.2f}%). Estimated time remaining: {int(hours)} hours, {int(minutes)} minutes, {int(seconds)} seconds.")
+
+# Process each county
+for county_code in county_names:
+    print(f"Processing county: {county_code}")
+
+    # Input polygon paths
+    simplified_polygon_voronoi = os.path.join(output_folder, f"Simplified_{county_code}_FinalIntersect")
+    polygon_voronoi = os.path.join(voronoi_outputs_dir, f"{county_code}_FinalIntersect.shp")
+
+    # Step 1: Calculate the maximum SNFI value for each feature in the Voronoi shape layers
+    for polygon_path, simplified_path, snfi_field, snfi_axis_field, abs_snfi_field, max_snfi_field in [
+            (polygon_voronoi, simplified_polygon_voronoi, "vSNFI", "vSNFI_Axis", "Abs_vSNFI", "Max_vSNFI")]:
+        print(f"Calculating {max_snfi_field} for {county_code}...")
+
+        # Ensure all relevant fields exist in the simplified polygons
+        for field_name in [snfi_field, snfi_axis_field, abs_snfi_field, max_snfi_field]:
+            if field_name not in [f.name for f in arcpy.ListFields(simplified_path)]:
+                arcpy.AddField_management(simplified_path, field_name, "DOUBLE")
+
+        # Update the "Max_SNFI" field with the maximum value between "Abs_SNFI" and "SNFI_Axis"
+        with arcpy.da.UpdateCursor(simplified_path, [snfi_field, abs_snfi_field, snfi_axis_field, max_snfi_field]) as cursor:
+            for row in cursor:
+                if row[1] is not None and row[2] is not None:
+                    row[3] = max(row[1], row[2])  # Calculate max of both fields if both are populated
+                elif row[1] is not None:
+                    row[3] = row[1]  # Use "Abs_SNFI" if "SNFI_Axis" is None
+                elif row[2] is not None:
+                    row[3] = row[2]  # Use "SNFI_Axis" if "Abs_SNFI" is None
+                cursor.updateRow(row)  # Update the Max_SNFI value in the row
+
+        print(f"Finished calculating {max_snfi_field} for {county_code}.")
+
+        # Transfer SNFI values from simplified polygons back to original polygons
+        print(f"Transferring SNFI values from simplified shapes to original polygons for {county_code}...")
+
+        # Ensure all relevant fields exist in the original shapefile
+        for field_name in [snfi_field, snfi_axis_field, abs_snfi_field, max_snfi_field]:
+            if field_name not in [f.name for f in arcpy.ListFields(polygon_path)]:
+                arcpy.AddField_management(polygon_path, field_name, "DOUBLE")
+
+        # Create a dictionary of "ORIG_FID" and SNFI values from the simplified shapefile
+        simplified_snfi = {}
+        with arcpy.da.SearchCursor(simplified_path, ["ORIG_FID", snfi_field, snfi_axis_field, abs_snfi_field, max_snfi_field]) as simp_cursor:
+            for row in simp_cursor:
+                simplified_snfi[row[0]] = row[1:]  # Use ORIG_FID for matching
+
+        # Update the original shapefile with the SNFI values from the simplified shapefile
+        with arcpy.da.UpdateCursor(polygon_path, ["ORIG_FID", snfi_field, snfi_axis_field, abs_snfi_field, max_snfi_field]) as orig_cursor:
+            for row in orig_cursor:
+                if row[0] in simplified_snfi:
+                    values = simplified_snfi[row[0]]
+                    #print(f"Updating FID {row[0]}: Transferring values {values}")  # Debugging print to verify transfer
+                    if values[0] is not None:
+                        row[1] = values[0]  # Update SNFI (vSNFI)
+                    if values[1] is not None:
+                        row[2] = values[1]  # Update SNFI_Axis (vSNFI_Axis)
+                    if values[2] is not None:
+                        row[3] = values[2]  # Update Abs_SNFI (Abs_vSNFI)
+                    if values[3] is not None:
+                        row[4] = values[3]  # Update Max_SNFI (Max_vSNFI)
+                    orig_cursor.updateRow(row)
+                else:
+                    print(f"No matching value found for FID {row[0]}")  # Debugging print to verify missing matches
+
+        print(f"Finished transferring SNFI values to original polygons for {county_code}.")
+
+print("All counties processed successfully.")
