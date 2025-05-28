@@ -1,0 +1,56 @@
+import arcpy
+import os
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Directories
+output_dir = r"X:/WindbreaksAllCounties/Windbreak Outputs"
+centerline_working_dir = r"X:/ToF Outputs/Shapefiles_v1_centerlineWorking_v2"
+voronoi_outputs_dir = r"X:/ToF Outputs/VoronoiOutputs"
+gdb_path = r"X:/WindbreaksAllCounties/WindbreaksAllCounties.gdb"
+
+# County codes
+county_names = ["BaWI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"]
+
+# Ensure output directory exists
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+# Loop through each county and export files with proper naming
+for county_code in county_names:
+    print(f"Processing county: {county_code}")
+    
+    # Original files
+    original_file_path = os.path.join(centerline_working_dir, f"{county_code}.shp")
+    voronoi_file_path = os.path.join(voronoi_outputs_dir, f"{county_code}_FinalIntersect.shp")
+
+    # Export paths with new names
+    original_export_path = os.path.join(output_dir, f"{county_code}.shp")
+    voronoi_export_path = os.path.join(output_dir, f"{county_code}_VoronoiIntersect.shp")
+
+    # Export original files
+    arcpy.management.CopyFeatures(original_file_path, original_export_path)
+    arcpy.management.CopyFeatures(voronoi_file_path, voronoi_export_path)
+    
+#     # Filtered files with new names
+#     snfi_filtered_voronoi = os.path.join(gdb_path, f"{county_code}_FinalIntersect_FilteredSNFI")
+#     snfi_filtered_shape = os.path.join(gdb_path, f"{county_code}_CopiedShape_FilteredSNFI")
+#     wsi_filtered_voronoi = os.path.join(gdb_path, f"{county_code}_FinalIntersect_Filtered")
+#     wsi_filtered_shape = os.path.join(gdb_path, f"{county_code}_CopiedShape_Filtered")
+
+#     # Paths with export names
+#     snfi_filtered_voronoi_export = os.path.join(output_dir, f"{county_code}_VoronoiIntersect_FilteredSNFI.shp")
+#     snfi_filtered_shape_export = os.path.join(output_dir, f"{county_code}_FilteredSNFI.shp")
+#     wsi_filtered_voronoi_export = os.path.join(output_dir, f"{county_code}_VoronoiIntersect_FilteredWSI.shp")
+#     wsi_filtered_shape_export = os.path.join(output_dir, f"{county_code}_FilteredWSI.shp")
+
+#     # Export filtered files
+#     arcpy.management.CopyFeatures(snfi_filtered_voronoi, snfi_filtered_voronoi_export)
+#     arcpy.management.CopyFeatures(snfi_filtered_shape, snfi_filtered_shape_export)
+#     arcpy.management.CopyFeatures(wsi_filtered_voronoi, wsi_filtered_voronoi_export)
+#     arcpy.management.CopyFeatures(wsi_filtered_shape, wsi_filtered_shape_export)
+
+    print(f"Finished processing and exporting files for {county_code}")
+    
+print("All counties processed and files exported.")
