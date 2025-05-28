@@ -1,0 +1,33 @@
+import arcpy
+
+# Set the path to your polygon layer
+polygon_layer = r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics\WindbreakSummaryStatistics.gdb\JaMI_FinalWindbreaks"
+
+# Step 1: Create a dictionary to track the largest Shape_Area feature IDs for each f_OID
+largest_area_ids = {}
+with arcpy.da.SearchCursor(polygon_layer, ["OID@", "f_OID", "Shape_Area"]) as cursor:
+    for row in cursor:
+        oid, f_oid, area = row
+        if f_oid:  # Skip empty f_OID values
+            if f_oid in largest_area_ids:
+                # Update if this area is larger than the current largest
+                if area > largest_area_ids[f_oid][1]:
+                    largest_area_ids[f_oid] = (oid, area)
+            else:
+                # Add first occurrence of this f_OID
+                largest_area_ids[f_oid] = (oid, area)
+
+# Step 2: Select polygons that are not the largest for each f_OID
+arcpy.MakeFeatureLayer_management(polygon_layer, "duplicates_layer")
+
+# Construct a selection query to keep only the largest polygons per f_OID
+oids_to_keep = [oid for oid, _ in largest_area_ids.values()]
+selection_query = f"NOT OBJECTID IN ({','.join(map(str, oids_to_keep))})"
+arcpy.SelectLayerByAttribute_management("duplicates_layer", "NEW_SELECTION", selection_query)
+
+# Step 3: Delete the selected polygons, which are the smaller duplicates
+try:
+    arcpy.DeleteFeatures_management("duplicates_layer")
+    print("Smaller duplicate polygons deleted successfully, retaining only the largest per f_OID.")
+except Exception as e:
+    print("Error during deletion:", e)
