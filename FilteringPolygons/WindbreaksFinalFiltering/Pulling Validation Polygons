@@ -1,0 +1,81 @@
+import arcpy
+import os
+import numpy as np
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Directories
+output_dir = r"X:/WindbreaksAllCounties/Windbreak Outputs For Jack"
+gdb_path = r"X:/WindbreaksAllCounties/WindbreakSummaryStatistics/WindbreakSummaryStatistics.gdb"
+
+# County codes to process
+county_names = ["W2OH", "JaMI", "RiWI", "ClWI", "HoOH", "MeMI"]
+
+# Ensure output directory exists
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+def get_polygon_count(shapefile_path):
+    """
+    Get the count of features in a shapefile.
+    """
+    return int(arcpy.management.GetCount(shapefile_path)[0])
+
+def select_random_polygons(shapefile, count):
+    """
+    Select random polygons from the shapefile.
+    """
+    oid_field = arcpy.Describe(shapefile).oidFieldName
+    oids = [row[0] for row in arcpy.da.SearchCursor(shapefile, [oid_field])]
+    selected_oids = np.random.choice(oids, size=min(count, len(oids)), replace=False)
+    return selected_oids
+
+def process_county(county_code):
+    """
+    Main function to process each county and generate a new feature layer with random polygons.
+    """
+    try:
+        print(f"Processing county: {county_code}")
+
+        # Input shapefile path
+        input_shapefile = os.path.join(gdb_path, f"{county_code}_FinalWindbreaks_SummaryStat")
+
+        # Check if input shapefile exists
+        if not arcpy.Exists(input_shapefile):
+            raise FileNotFoundError(f"Input shapefile {input_shapefile} does not exist.")
+
+        # Get the count of features in the input shapefile
+        feature_count = get_polygon_count(input_shapefile)
+
+        if feature_count == 0:
+            raise ValueError(f"No features found in shapefile {input_shapefile}.")
+
+        # Select 1000 random polygons based on the feature count
+        random_oids = select_random_polygons(input_shapefile, 1000)
+
+        # Create a feature layer from the selected polygons
+        if len(random_oids) == 0:
+            raise ValueError(f"No valid OBJECTIDs found for selection in shapefile {input_shapefile}.")
+
+        where_clause = "{} IN ({})".format(arcpy.Describe(input_shapefile).oidFieldName, ','.join(map(str, random_oids)))
+        random_layer = f"{county_code}_random_layer"
+        arcpy.management.MakeFeatureLayer(input_shapefile, random_layer, where_clause)
+
+        # Save the selected polygons to a new feature layer
+        output_feature_class = os.path.join(gdb_path, f"VerificationValidation_{county_code}")
+        arcpy.management.CopyFeatures(random_layer, output_feature_class)
+
+        # Add a new field 'ValidWB' and populate it with -1
+        arcpy.management.AddField(output_feature_class, "ValidWB", "LONG")
+        arcpy.management.CalculateField(output_feature_class, "ValidWB", "-1", "PYTHON3")
+
+        print(f"Finished processing county: {county_code}")
+    except Exception as e:
+        print(f"Error processing county {county_code}: {e}")
+
+# Loop through each county and process
+for county_code in county_names:
+    process_county(county_code)
+
+print("All counties processed and random polygons selected.")
