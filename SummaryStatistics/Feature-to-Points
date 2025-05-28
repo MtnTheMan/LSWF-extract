@@ -1,0 +1,47 @@
+import arcpy
+import os
+
+# County codes
+county_names = [
+    "JaMI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI",
+    "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI",
+    "BaWI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH",
+    "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI",
+    "W2OH", "AlMI", "AtOH"
+]
+
+# Directories
+geodatabase_path = r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics\WindbreakSummaryStatistics.gdb"
+shapefile_folder = os.path.join(r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics", "WindbreakSummaryPoints")
+
+# Create folder for shapefiles if it doesn't exist
+if not os.path.exists(shapefile_folder):
+    os.makedirs(shapefile_folder)
+
+# Run FeatureToPoint and export to shapefiles
+for county in county_names:
+    try:
+        # Paths for GDB and shapefile outputs
+        input_feature = f"{geodatabase_path}\\{county}_FinalWindbreaks_SummaryStat"
+        gdb_output_feature = f"{geodatabase_path}\\{county}_FinalWindbreak_Points"
+        shapefile_output = os.path.join(shapefile_folder, f"{county}_FinalWindbreak_Points.shp")
+
+        # Run FeatureToPoint
+        arcpy.management.FeatureToPoint(
+            in_features=input_feature,
+            out_feature_class=gdb_output_feature,
+            point_location="INSIDE"
+        )
+        print(f"FeatureToPoint completed for {county}")
+
+        # Export to shapefile
+        arcpy.conversion.FeatureClassToShapefile(
+            [gdb_output_feature],  # Feature classes as a list
+            shapefile_folder
+        )
+        print(f"Shapefile exported for {county} to {shapefile_output}")
+
+    except Exception as e:
+        print(f"Error processing {county}: {e}")
+
+print("Processing and shapefile export complete!")
