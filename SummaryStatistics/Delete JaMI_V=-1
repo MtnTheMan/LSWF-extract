@@ -1,0 +1,15 @@
+import arcpy
+
+# Set the path to your polygon layer
+polygon_layer = r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics\WindbreakSummaryStatistics.gdb\JaMI_FinalWindbreaks"
+
+# Define the where clause to select polygons with FID_JaMI_V equal to -1
+where_clause = "FID_JaMI_V = -1"
+
+# Make a feature layer with polygons where FID_JaMI_V is -1 and delete them
+try:
+    arcpy.MakeFeatureLayer_management(polygon_layer, "polygons_to_delete", where_clause)
+    arcpy.DeleteFeatures_management("polygons_to_delete")
+    print("Polygons with FID_JaMI_V = -1 deleted successfully.")
+except Exception as e:
+    print("Error in MakeFeatureLayer or DeleteFeatures:", e)
