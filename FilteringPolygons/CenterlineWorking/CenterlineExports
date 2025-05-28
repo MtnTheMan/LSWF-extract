@@ -1,0 +1,58 @@
+import arcpy
+import os
+
+# List of county short names
+county_names = [
+    "BaWI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI",
+    "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI",
+    "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH", "AuOH"
+]
+
+# Define the geodatabase containing the centerline results
+geodatabase = r"X:\ToF Outputs\Shapefiles_v1_centerlineWorking\ToFCenterlineWorking\ToFCenterlineWorking.gdb"
+
+# Define output folder for the exported centerline shapefiles
+output_folder = r"X:\ToF Outputs\Shapefiles_v1_centerlineWorking_v3"
+
+# Ensure output folder exists
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+
+# Loop through each county and apply the ExportFeatures tool
+for county_name in county_names:
+    try:
+        # Define the input feature in the geodatabase
+        in_feature = os.path.join(geodatabase, county_name + "_PolygonToCenterline")
+
+        # Define the output shapefile path with the naming convention
+        out_feature = os.path.join(output_folder, county_name + "_PolygonToCenterline_v1.shp")
+
+        # Notify that the process for this county is starting
+        print(f"Starting export for {county_name}_PolygonToCenterline...")
+
+        # Export the features using the ExportFeatures tool
+        arcpy.conversion.ExportFeatures(
+            in_features=in_feature,
+            out_features=out_feature,
+            where_clause="",
+            use_field_alias_as_name="NOT_USE_ALIAS",
+            field_mapping=(
+                'FID "FID" true true false 4 Long 0 0,First,#,' + county_name + '_PolygonToCenterline,FID,-1,-1;'
+                'FID_' + county_name + ' "FID_' + county_name + '" true true false 4 Long 0 0,First,#,' + county_name + '_PolygonToCenterline,FID_' + county_name + ',-1,-1;'
+                'Shape_Length "Shape_Length" false true true 8 Double 0 0,First,#,' + county_name + '_PolygonToCenterline,Shape_Length,-1,-1'
+            ),
+            sort_field=None
+        )
+
+        # Notify that the export is complete
+        print(f"Export complete for {county_name}_PolygonToCenterline, saved as {county_name}_PolygonToCenterline_v1.shp.")
+
+    except arcpy.ExecuteError:
+        # Capture any errors from the arcpy tool
+        print(f"Error processing {county_name}: {arcpy.GetMessages(2)}")
+    except Exception as e:
+        # Capture any general Python errors
+        print(f"General error while processing {county_name}: {str(e)}")
+    finally:
+        # Final status update after each county is processed
+        print(f"Finished processing {county_name}.")
