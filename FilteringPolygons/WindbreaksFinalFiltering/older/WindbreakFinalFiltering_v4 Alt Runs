@@ -1,0 +1,340 @@
+### (12)
+
+import arcpy
+import os
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Directories
+output_dir = r"X:/WindbreaksAllCounties/Windbreak Outputs"
+gdb_path = r"X:/WindbreaksAllCounties/WindbreaksFinalFiltering/WindbreaksFinalFiltering.gdb"
+
+# County codes #IN DEBUGGING MODE JUST CHECKING ONE COUNTY -  Need to replace with BaWI once done
+county_names = ["W2OH"]#, "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"]
+
+# Windbreak thresholds
+snfi_threshold = 0.8
+wsi_threshold = 2.0
+euc_dist_threshold = 50
+
+# Ensure output directory exists
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+def get_object_id_field(shapefile_path):
+    """
+    Get the object ID field name of a shapefile.
+    """
+    fields = arcpy.ListFields(shapefile_path)
+    for field in fields:
+        if field.type == "OID":
+            return field.name
+    raise ValueError(f"No OID field found in {shapefile_path}")
+
+def recalculate_fields(shapefile, field_name, expression):
+    """
+    Add and calculate a field using the specified expression.
+    """
+    try:
+        arcpy.management.AddField(shapefile, field_name, "DOUBLE")
+        arcpy.management.CalculateField(shapefile, field_name, expression, "PYTHON3")
+    except Exception as e:
+        print(f"Error recalculating field {field_name} on {shapefile}: {e}")
+
+def add_and_calculate_oid(shapefile, new_field, prefix, oid_field):
+    """
+    Add and calculate a new OID field with a prefix.
+    """
+    try:
+        arcpy.management.AddField(shapefile, new_field, "TEXT")
+        arcpy.management.CalculateField(shapefile, new_field, f"'{prefix}' + str(!{oid_field}!)", "PYTHON3")
+    except Exception as e:
+        print(f"Error adding/calculating OID field {new_field} on {shapefile}: {e}")
+
+def process_windbreaks(county_code):
+    """
+    Main processing function for each county's windbreak data.
+    """
+    try:
+        print(f"Processing county: {county_code}")
+        
+        # File paths
+        parent_file_path = os.path.join(output_dir, f"{county_code}.shp")
+        voronoi_file_path = os.path.join(output_dir, f"{county_code}_VoronoiIntersect.shp")
+
+        # Get OID fields
+        parent_oid_field = get_object_id_field(parent_file_path)
+        voronoi_oid_field = get_object_id_field(voronoi_file_path)
+
+        # Step 2: Recalculate fields
+        recalculate_fields(parent_file_path, "Max_dSNFI", "max(abs(!dSNFI_Axis!), abs(!Abs_dSNFI!))")
+        recalculate_fields(voronoi_file_path, "Max_vSNFI", "max(abs(!vSNFI_Axis!), abs(!Abs_vSNFI!))")
+
+        # Step 3: Filter Voronoi polygons based on SNFI, WSI, and Euc_Dist
+        filtered_voronoi_layer = f"{county_code}_filtered_voronoi"
+        filter_expression = (
+            f"SHAPE_Area > 250 AND Max_vSNFI > {snfi_threshold} "
+            f"AND vWSI < {wsi_threshold} AND Euc_Dist >= {euc_dist_threshold}"
+        )
+        arcpy.management.MakeFeatureLayer(voronoi_file_path, filtered_voronoi_layer, filter_expression)
+        filtered_voronoi_output = os.path.join(output_dir, f"{county_code}_VoronoiFiltered.shp")
+        arcpy.management.CopyFeatures(filtered_voronoi_layer, filtered_voronoi_output)
+        arcpy.management.Delete(filtered_voronoi_layer)
+
+        # Step 4: Filter Parent polygons based on SNFI, WSI, and Euc_Dist
+        filtered_parent_layer = f"{county_code}_filtered_parent"
+        parent_filter_expression = (
+            f"Max_dSNFI > {snfi_threshold} AND dWSI < {wsi_threshold} "
+            f"AND Euc_Dist >= {euc_dist_threshold}"
+        )
+        arcpy.management.MakeFeatureLayer(parent_file_path, filtered_parent_layer, parent_filter_expression)
+        filtered_parent_output = os.path.join(output_dir, f"{county_code}_ParentFiltered.shp")
+        arcpy.management.CopyFeatures(filtered_parent_layer, filtered_parent_output)
+        arcpy.management.Delete(filtered_parent_layer)
+
+        # Step 5: Spatial join between filtered Voronoi and Parent polygons
+        joined_voronoi_output = os.path.join(output_dir, f"{county_code}_VoronoiParentJoined.shp")
+        arcpy.analysis.SpatialJoin(filtered_voronoi_output, filtered_parent_output, joined_voronoi_output, "JOIN_ONE_TO_MANY", "KEEP_COMMON")
+
+        # Step 6: Select the best polygons based on SNFI comparison
+        parent_oids_to_retain = []
+        voronoi_oids_to_retain = []
+        parent_dict = {}
+
+        # Include polygons with no matching counterparts in final output
+        # Check Join_Count field from joined_voronoi_output
+        with arcpy.da.SearchCursor(joined_voronoi_output, ["d_OID", "v_OID", "Join_Count"]) as cursor:
+            for row in cursor:
+                d_oid, v_oid, join_count = row
+                if join_count == 0:
+                    # If no match, add the respective polygon to the retain list
+                    if d_oid is not None:
+                        parent_oids_to_retain.append(d_oid)
+                    if v_oid is not None:
+                        voronoi_oids_to_retain.append(v_oid)
+
+        with arcpy.da.SearchCursor(joined_voronoi_output, ["d_OID", "Max_dSNFI", "Max_vSNFI", "v_OID", "Join_Count"]) as cursor:
+            for row in cursor:
+                d_oid, parent_snfi, voronoi_snfi, v_oid, join_count = row
+                if d_oid not in parent_dict:
+                    parent_dict[d_oid] = {"parent_snfi": parent_snfi, "component_snfi": [], "component_count": 0}
+                parent_dict[d_oid]["component_snfi"].append((voronoi_snfi, v_oid))
+                parent_dict[d_oid]["component_count"] += 1
+
+        for d_oid, data in parent_dict.items():
+            parent_snfi = data["parent_snfi"]
+            component_snfi = data["component_snfi"]
+            higher_snfi_components = [snfi for snfi, _ in component_snfi if snfi > parent_snfi]
+
+            if len(higher_snfi_components) >= 2:
+                voronoi_oids_to_retain.extend([v_oid for _, v_oid in component_snfi])
+            elif parent_snfi >= snfi_threshold:
+                parent_oids_to_retain.append(d_oid)
+            else:
+                # If the parent and voronoi polygon have identical values, retain the parent
+                equal_snfi_components = [snfi for snfi, _ in component_snfi if snfi == parent_snfi]
+                if equal_snfi_components:
+                    parent_oids_to_retain.append(d_oid)
+
+        # Step 7: Create final filtered layers for the best polygons
+        parent_layer = f"{county_code}_best_filtered_parent_layer"
+        parent_filter_query = f"d_OID IN ({', '.join([repr(oid) for oid in parent_oids_to_retain])})"
+        arcpy.management.MakeFeatureLayer(filtered_parent_output, parent_layer, parent_filter_query)
+        final_filtered_parent_output = os.path.join(output_dir, f"{county_code}_FinalParentFiltered.shp")
+        arcpy.management.CopyFeatures(parent_layer, final_filtered_parent_output)
+
+        voronoi_layer = f"{county_code}_best_filtered_voronoi_layer"
+        voronoi_filter_query = f"v_OID IN ({', '.join([repr(oid) for oid in voronoi_oids_to_retain])})"
+        arcpy.management.MakeFeatureLayer(filtered_voronoi_output, voronoi_layer, voronoi_filter_query)
+        filtered_voronoi_output_final = os.path.join(output_dir, f"{county_code}_FinalVoronoiFiltered.shp")
+        arcpy.management.CopyFeatures(voronoi_layer, filtered_voronoi_output_final)
+
+        # Step 8: Merge final filtered parent and Voronoi polygons
+        best_polygons_output = os.path.join(output_dir, f"{county_code}_BestPolygons.shp")
+        arcpy.management.Merge([final_filtered_parent_output, filtered_voronoi_output_final], best_polygons_output)
+
+        # Step 9: Use Symmetrical Difference Tool to find non-overlapping areas
+        sym_diff_output = os.path.join(output_dir, f"{county_code}_SymmetricalDifference.shp")
+        arcpy.analysis.SymDiff(filtered_voronoi_output, filtered_parent_output, sym_diff_output, "ALL", None)
+
+        # Step 10: Merge non-overlapping areas with the previously merged polygons
+        final_windbreaks_output = os.path.join(output_dir, f"{county_code}_FinalWindbreaks.shp")
+        arcpy.management.Merge([best_polygons_output, sym_diff_output], final_windbreaks_output)
+
+        print(f"Finished processing county: {county_code}")
+    except Exception as e:
+        print(f"Error processing county {county_code}: {e}")
+
+# Loop through each county and process
+for county_code in county_names:
+    process_windbreaks(county_code)
+
+print("All counties processed and best polygons selected.")
+
+
+### (11)
+
+import arcpy
+import os
+
+# Set up workspace and environment
+arcpy.env.overwriteOutput = True
+
+# Directories
+output_dir = r"X:/WindbreaksAllCounties/Windbreak Outputs"
+gdb_path = r"X:/WindbreaksAllCounties/WindbreaksFinalFiltering/WindbreaksFinalFiltering.gdb"
+
+# County codes #IN DEBUGGING MODE JUST CHECKING ONE COUNTY -  Need to replace with BaWI once done
+county_names = ["W2OH"]#, "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "JaMI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"]
+
+# Windbreak thresholds
+snfi_threshold = 0.8
+wsi_threshold = 2.0
+euc_dist_threshold = 50
+
+# Ensure output directory exists
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+def get_object_id_field(shapefile_path):
+    """
+    Get the object ID field name of a shapefile.
+    """
+    fields = arcpy.ListFields(shapefile_path)
+    for field in fields:
+        if field.type == "OID":
+            return field.name
+    raise ValueError(f"No OID field found in {shapefile_path}")
+
+def recalculate_fields(shapefile, field_name, expression):
+    """
+    Add and calculate a field using the specified expression.
+    """
+    try:
+        arcpy.management.AddField(shapefile, field_name, "DOUBLE")
+        arcpy.management.CalculateField(shapefile, field_name, expression, "PYTHON3")
+    except Exception as e:
+        print(f"Error recalculating field {field_name} on {shapefile}: {e}")
+
+def add_and_calculate_oid(shapefile, new_field, prefix, oid_field):
+    """
+    Add and calculate a new OID field with a prefix.
+    """
+    try:
+        arcpy.management.AddField(shapefile, new_field, "TEXT")
+        arcpy.management.CalculateField(shapefile, new_field, f"'{prefix}' + str(!{oid_field}!)", "PYTHON3")
+    except Exception as e:
+        print(f"Error adding/calculating OID field {new_field} on {shapefile}: {e}")
+
+def process_windbreaks(county_code):
+    """
+    Main processing function for each county's windbreak data.
+    """
+    try:
+        print(f"Processing county: {county_code}")
+        
+        # File paths
+        parent_file_path = os.path.join(output_dir, f"{county_code}.shp")
+        voronoi_file_path = os.path.join(output_dir, f"{county_code}_VoronoiIntersect.shp")
+
+        # Get OID fields
+        parent_oid_field = get_object_id_field(parent_file_path)
+        voronoi_oid_field = get_object_id_field(voronoi_file_path)
+
+        # Step 2: Recalculate fields
+        recalculate_fields(parent_file_path, "Max_dSNFI", "max(abs(!dSNFI_Axis!), abs(!Abs_dSNFI!))")
+        recalculate_fields(voronoi_file_path, "Max_vSNFI", "max(abs(!vSNFI_Axis!), abs(!Abs_vSNFI!))")
+
+        # Step 3: Filter Voronoi polygons based on SNFI, WSI, and Euc_Dist
+        filtered_voronoi_layer = f"{county_code}_filtered_voronoi"
+        filter_expression = (
+            f"SHAPE_Area > 250 AND Max_vSNFI > {snfi_threshold} "
+            f"AND vWSI < {wsi_threshold} AND Euc_Dist >= {euc_dist_threshold}"
+        )
+        arcpy.management.MakeFeatureLayer(voronoi_file_path, filtered_voronoi_layer, filter_expression)
+        filtered_voronoi_output = os.path.join(output_dir, f"{county_code}_VoronoiFiltered.shp")
+        arcpy.management.CopyFeatures(filtered_voronoi_layer, filtered_voronoi_output)
+        arcpy.management.Delete(filtered_voronoi_layer)
+
+        # Step 4: Filter Parent polygons based on SNFI, WSI, and Euc_Dist
+        filtered_parent_layer = f"{county_code}_filtered_parent"
+        parent_filter_expression = (
+            f"Max_dSNFI > {snfi_threshold} AND dWSI < {wsi_threshold} "
+            f"AND Euc_Dist >= {euc_dist_threshold}"
+        )
+        arcpy.management.MakeFeatureLayer(parent_file_path, filtered_parent_layer, parent_filter_expression)
+        filtered_parent_output = os.path.join(output_dir, f"{county_code}_ParentFiltered.shp")
+        arcpy.management.CopyFeatures(filtered_parent_layer, filtered_parent_output)
+        arcpy.management.Delete(filtered_parent_layer)
+
+        # Step 5: Spatial join between filtered Voronoi and Parent polygons
+        joined_voronoi_output = os.path.join(output_dir, f"{county_code}_VoronoiParentJoined.shp")
+        arcpy.analysis.SpatialJoin(filtered_voronoi_output, filtered_parent_output, joined_voronoi_output, "JOIN_ONE_TO_MANY", "KEEP_COMMON")
+
+        # Step 6: Select the best polygons based on SNFI comparison
+        parent_oids_to_retain = []
+        voronoi_oids_to_retain = []
+        parent_dict = {}
+
+        # Include polygons with no matching counterparts in final output
+        # Check Join_Count field from joined_voronoi_output
+        with arcpy.da.SearchCursor(joined_voronoi_output, ["d_OID", "v_OID", "Join_Count"]) as cursor:
+            for row in cursor:
+                d_oid, v_oid, join_count = row
+                if join_count == 0:
+                    # If no match, add the respective polygon to the retain list
+                    if d_oid is not None:
+                        parent_oids_to_retain.append(d_oid)
+                    if v_oid is not None:
+                        voronoi_oids_to_retain.append(v_oid)
+
+        with arcpy.da.SearchCursor(joined_voronoi_output, ["d_OID", "Max_dSNFI", "Max_vSNFI", "v_OID", "Join_Count"]) as cursor:
+            for row in cursor:
+                d_oid, parent_snfi, voronoi_snfi, v_oid, join_count = row
+                if d_oid not in parent_dict:
+                    parent_dict[d_oid] = {"parent_snfi": parent_snfi, "component_snfi": [], "component_count": 0}
+                parent_dict[d_oid]["component_snfi"].append((voronoi_snfi, v_oid))
+                parent_dict[d_oid]["component_count"] += 1
+
+        for d_oid, data in parent_dict.items():
+            parent_snfi = data["parent_snfi"]
+            component_snfi = data["component_snfi"]
+            higher_snfi_components = [snfi for snfi, _ in component_snfi if snfi > parent_snfi]
+
+            if len(higher_snfi_components) >= 2:
+                voronoi_oids_to_retain.extend([v_oid for _, v_oid in component_snfi])
+            elif parent_snfi >= snfi_threshold:
+                parent_oids_to_retain.append(d_oid)
+            else:
+                # If the parent and voronoi polygon have identical values, retain the parent
+                equal_snfi_components = [snfi for snfi, _ in component_snfi if snfi == parent_snfi]
+                if equal_snfi_components:
+                    parent_oids_to_retain.append(d_oid)
+
+        # Step 8: Create final filtered layers for the best polygons
+        parent_layer = f"{county_code}_best_filtered_parent_layer"
+        parent_filter_query = f"d_OID IN ({', '.join([repr(oid) for oid in parent_oids_to_retain])})"
+        arcpy.management.MakeFeatureLayer(filtered_parent_output, parent_layer, parent_filter_query)
+        final_filtered_parent_output = os.path.join(output_dir, f"{county_code}_FinalParentFiltered.shp")
+        arcpy.management.CopyFeatures(parent_layer, final_filtered_parent_output)
+
+        voronoi_layer = f"{county_code}_best_filtered_voronoi_layer"
+        voronoi_filter_query = f"v_OID IN ({', '.join([repr(oid) for oid in voronoi_oids_to_retain])})"
+        arcpy.management.MakeFeatureLayer(filtered_voronoi_output, voronoi_layer, voronoi_filter_query)
+        filtered_voronoi_output_final = os.path.join(output_dir, f"{county_code}_FinalVoronoiFiltered.shp")
+        arcpy.management.CopyFeatures(voronoi_layer, filtered_voronoi_output_final)
+
+        # Step 9: Merge final filtered parent and Voronoi polygons
+        best_polygons_output = os.path.join(output_dir, f"{county_code}_BestPolygons.shp")
+        arcpy.management.Merge([final_filtered_parent_output, filtered_voronoi_output_final], best_polygons_output)
+
+        print(f"Finished processing county: {county_code}")
+    except Exception as e:
+        print(f"Error processing county {county_code}: {e}")
+
+# Loop through each county and process
+for county_code in county_names:
+    process_windbreaks(county_code)
+
+print("All counties processed and best polygons selected.")
