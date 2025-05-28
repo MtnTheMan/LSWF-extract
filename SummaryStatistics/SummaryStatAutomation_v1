@@ -1,0 +1,167 @@
+import arcpy
+
+# County codes
+county_names = ["JaMI", "BeMI", "ChMI", "ClWI", "CoOH", "CrOH", "DeOH", "DoWI", "GrWI", "HaOH", "HoMI", "WaOH", "HoOH", "HuMI", "IoWI", "IsMI", "BaWI", "KeMI", "KnOH", "LeMI", "LiOH", "MaWI", "MeMI", "AuOH", "MoMI", "OcMI", "OnWI", "OzWI", "RiWI", "SaWI", "ShWI", "VeWI", "W2OH", "AlMI", "AtOH"]
+
+# Directories
+final_windbreaks_dir = r"X:\WindbreaksAllCounties\WindbreakOutputs(Final)_v2"
+final_splitlines_dir = r"X:\WindbreaksAllCounties\WindbreaksAllCounties.gdb"
+output_gdb = r"X:\WindbreaksAllCounties\WindbreakSummaryStatistics\WindbreakSummaryStatistics.gdb"
+
+# Iterate through each county code
+for county_code in county_names:
+    try:
+        # Step 0: Import the final windbreaks as a copy to the geodatabase
+        windbreaks_path = f"{final_windbreaks_dir}\{county_code}_FinalWindbreaks.shp"
+        arcpy.conversion.FeatureClassToGeodatabase(
+            Input_Features=windbreaks_path,
+            Output_Geodatabase=output_gdb
+        )
+
+        # Set the path to your polygon layer for Step 1 and Step 2
+        polygon_layer = f"{output_gdb}\{county_code}_FinalWindbreaks"
+
+        # Step 1: Add the f_OID field and calculate its value based on d_OID or v_OID values
+        # Add f_OID field
+        arcpy.management.AddField(
+            in_table=polygon_layer,
+            field_name="f_OID",
+            field_type="TEXT",
+            field_length=50
+        )
+
+        # Calculate the f_OID field based on d_OID or v_OID values
+        arcpy.management.CalculateField(
+            in_table=polygon_layer,
+            field="f_OID",
+            expression="""get_value(!d_OID!, !v_OID!)""",
+            expression_type="PYTHON3",
+            code_block="""def get_value(d_oid, v_oid):
+    if d_oid and d_oid.strip() != "":
+        return d_oid
+    else:
+        return v_oid""",
+            field_type="TEXT",
+            enforce_domains="NO_ENFORCE_DOMAINS"
+        )
+
+        # Step 2: Create a dictionary to track the largest Shape_Area feature IDs for each f_OID
+        largest_area_ids = {}
+        with arcpy.da.SearchCursor(polygon_layer, ["OID@", "f_OID", "Shape_Area"]) as cursor:
+            for row in cursor:
+                oid, f_oid, area = row
+                if f_oid:  # Skip empty f_OID values
+                    if f_oid in largest_area_ids:
+                        # Update if this area is larger than the current largest
+                        if area > largest_area_ids[f_oid][1]:
+                            largest_area_ids[f_oid] = (oid, area)
+                    else:
+                        # Add first occurrence of this f_OID
+                        largest_area_ids[f_oid] = (oid, area)
+
+        # Step 3: Select polygons that are not the largest for each f_OID
+        arcpy.MakeFeatureLayer_management(polygon_layer, "duplicates_layer")
+
+        # Construct a selection query to keep only the largest polygons per f_OID
+        oids_to_keep = [oid for oid, _ in largest_area_ids.values()]
+        selection_query = f"NOT OBJECTID IN ({','.join(map(str, oids_to_keep))})"
+        arcpy.SelectLayerByAttribute_management("duplicates_layer", "NEW_SELECTION", selection_query)
+
+        # Step 4: Delete the selected polygons, which are the smaller duplicates
+        arcpy.DeleteFeatures_management("duplicates_layer")
+        print(f"Smaller duplicate polygons deleted successfully for {county_code}, retaining only the largest per f_OID.")
+
+        # Step 4.1: Copy FinalSplitLines to a new feature class
+        split_lines_path = f"{final_splitlines_dir}\{county_code}_FinalSplitLines"
+        arcpy.management.Copy(
+            in_data=split_lines_path,
+            out_data=f"{output_gdb}\{county_code}_FinalSplitLinesSummStat",
+            data_type="FeatureClass",
+            associated_data=None
+        )
+
+        # Step 4.2: Pairwise clip FinalSplitLinesSummStat with FinalWindbreaks
+        arcpy.analysis.PairwiseClip(
+            in_features=f"{output_gdb}\{county_code}_FinalSplitLinesSummStat",
+            clip_features=polygon_layer,
+            out_feature_class=f"{output_gdb}\{county_code}_FinalSplit_PairwiseClip",
+            cluster_tolerance=None
+        )
+
+        # Step 4.3: Summarize within FinalWindbreaks using FinalSplit_PairwiseClip
+        arcpy.analysis.SummarizeWithin(
+            in_polygons=polygon_layer,
+            in_sum_features=f"{output_gdb}\{county_code}_FinalSplit_PairwiseClip",
+            out_feature_class=f"{output_gdb}\{county_code}_FinalWindbreaks_SummaryStat",
+            keep_all_polygons="KEEP_ALL",
+            sum_fields="Shape_Length Sum",
+            sum_shape="ADD_SHAPE_SUM",
+            shape_unit="METERS",
+            group_field=None,
+            add_min_maj="NO_MIN_MAJ",
+            add_group_percent="NO_PERCENT",
+            out_group_table=None
+        )
+
+        # Set the path to your polygon layer for Step 5
+        polygon_layer = f"{output_gdb}\{county_code}_FinalWindbreaks_SummaryStat"
+
+        # Define field pairs for copying values
+        field_pairs = [
+            ('Id_1', 'Id'),
+            ('gridcode_1', 'gridcode'),
+            ('AREA_GEO_1', 'AREA_GEO'),
+            ('PERIM_GE_1', 'PERIM_GEO'),
+            ('EXT_MIN__1', 'EXT_MIN_X'),
+            ('EXT_MIN__2', 'EXT_MIN_Y'),
+            ('EXT_MAX__1', 'EXT_MAX_X'),
+            ('EXT_MAX__2', 'EXT_MAX_Y'),
+            ('Euc_Dist_1', 'Euc_Dist'),
+            ('Sinuos_I_1', 'Sinuos_Idx'),
+            ('SNFI_1', 'SNFI'),
+            ('Abs_SNFI_1', 'Abs_SNFI')
+        ]
+
+        # Step 5: Iterate through each field pair and use arcpy.management.CalculateField to copy values if the target field is empty or 0
+        for source_field, target_field in field_pairs:
+            arcpy.management.CalculateField(
+                in_table=polygon_layer,
+                field=target_field,
+                expression=f"get_value(!{target_field}!, !{source_field}!)",
+                expression_type="PYTHON3",
+                code_block=f"""
+def get_value(target_value, source_value):
+    if target_value not in (None, '', 0):
+        return target_value
+    else:
+        return source_value
+""",
+                field_type="DOUBLE" if "Euc_Dist" in target_field else "TEXT",
+                enforce_domains="NO_ENFORCE_DOMAINS"
+            )
+            print(f"Field calculation for '{target_field}' completed for {county_code}.")
+
+        # Step 6: Add the Avg_Width field and calculate the average width of the polygon features in the dataset
+        # Add Avg_Width field
+        arcpy.management.AddField(
+            in_table=polygon_layer,
+            field_name="Avg_Width",
+            field_type="DOUBLE"
+        )
+
+        # Calculate the average width of the polygon features
+        arcpy.management.CalculateField(
+            in_table=polygon_layer,
+            field="Avg_Width",
+            expression="!Shape_Area!/!Euc_Dist!",
+            expression_type="PYTHON3",
+            code_block="",
+            field_type="DOUBLE",
+            enforce_domains="NO_ENFORCE_DOMAINS"
+        )
+        print(f"Average width calculation completed for {county_code}.")
+
+    except Exception as e:
+        print(f"Error processing county {county_code}: {e}")
+
+print("Processing completed for all counties.")
