@@ -1,0 +1,49 @@
+{
+  "name": "LSWF End-to-End Workflow",
+  "manifest_version": "1.0.0",
+  "updated_at_utc": "2026-02-19T20:28:44.854418+00:00",
+  "steps": {
+    "county_extract_and_buffer": {
+      "stage_id": "sub_meter_classification",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "county_landcover_generation": {
+      "stage_id": "sub_meter_classification",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "jackson_pipeline_foundation": {
+      "stage_id": "default_tof_filtering",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "all_counties_filtering_metrics": {
+      "stage_id": "default_tof_filtering",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "centerline_generation": {
+      "stage_id": "voronoi_segmentation_and_centerlines",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "final_filtering": {
+      "stage_id": "final_selection_and_exports",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "summary_automation": {
+      "stage_id": "summary_statistics_and_analysis",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    }
+  }
+}

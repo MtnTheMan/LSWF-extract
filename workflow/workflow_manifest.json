@@ -1,0 +1,132 @@
+{
+  "name": "LSWF End-to-End Workflow",
+  "version": "1.0.0",
+  "description": "Unified execution/trackable workflow that maps existing notebooks to the full LSWF process shown in the method flow chart.",
+  "stages": [
+    {
+      "id": "sub_meter_classification",
+      "title": "Sub-Meter Land Cover Classification",
+      "depends_on": [],
+      "steps": [
+        {
+          "id": "county_extract_and_buffer",
+          "title": "County extract, buffer, and raster prep",
+          "notebooks": [
+            "CountyClassificationsStage/County Extract + Buffer + Extract Raster.ipynb",
+            "CountyClassificationsStage/AllCounties.ipynb",
+            "CountyClassificationsStage/AllCountiesAlt.ipynb",
+            "CountyClassificationsStage/JacksonMIpilot.ipynb",
+            "CountyClassificationsStage/HamiltonOHpolygonWorkaround.ipynb"
+          ]
+        },
+        {
+          "id": "county_landcover_generation",
+          "title": "County-level classification and polygonization",
+          "notebooks": [
+            "CountyClassificationsStage/PolygonizeToFs Huron County.ipynb",
+            "CountyClassificationsStage/ShrinkExpandExample VernonCounty.ipynb",
+            "CountyClassificationsStage/ShapeMetricsAutomation_v1.ipynb"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "default_tof_filtering",
+      "title": "Default Trees Outside Forests (ToF) Filtering",
+      "depends_on": [
+        "sub_meter_classification"
+      ],
+      "steps": [
+        {
+          "id": "jackson_pipeline_foundation",
+          "title": "Prototype filtering metrics and automation",
+          "notebooks": [
+            "FilteringPolygons/WindbreakupJacksonCounty/SNFI_working_1.ipynb",
+            "FilteringPolygons/WindbreakupJacksonCounty/Anisotropic_SNFI_WSI (18).ipynb",
+            "FilteringPolygons/WindbreakupJacksonCounty/FullAutomation_v2.ipynb",
+            "FilteringPolygons/WindbreakupJacksonCounty/older/All other Anisotropic_SNFI_WSI code.ipynb"
+          ]
+        },
+        {
+          "id": "all_counties_filtering_metrics",
+          "title": "Apply SNFI/WSI metrics to all counties",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksAllCounties/SNFI_AllCounties_working_v2.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/WSI_AllCounties_working_v1.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/AllCountiesAutomated.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/ExportVoronoiFiles.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/ExportFiles_SNFI_Voronoi.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/FinalWindbreaksExport.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/FixingValuesInExports (21).ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/older-other/UN-RUN FinalWindbreaksExport.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/older-other/Alternate FixingValuesInExports runs.ipynb"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "voronoi_segmentation_and_centerlines",
+      "title": "LSWF Voronoi Segmentation and Centerline Processing",
+      "depends_on": [
+        "default_tof_filtering"
+      ],
+      "steps": [
+        {
+          "id": "centerline_generation",
+          "title": "Generate and simplify centerlines",
+          "notebooks": [
+            "FilteringPolygons/CenterlineWorking/PolygonToCenterline.ipynb",
+            "FilteringPolygons/CenterlineWorking/Working CenterlineFunctionExample.ipynb",
+            "FilteringPolygons/CenterlineWorking/Other code for Centerline working.ipynb",
+            "FilteringPolygons/CenterlineWorking/CenterlineExports.ipynb",
+            "FilteringPolygons/CenterlineWorking/GDB export.ipynb"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "final_selection_and_exports",
+      "title": "Best Polygon Selection + Final Exports",
+      "depends_on": [
+        "voronoi_segmentation_and_centerlines"
+      ],
+      "steps": [
+        {
+          "id": "final_filtering",
+          "title": "Final windbreak filtering and export",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksFinalFiltering/WindbreakFinalFiltering_v4.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/older/WindbreakFinalFiltering_v4 Alt Runs.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/older/Alt FixingValues.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/FixingValuesinExports (21).ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/Pulling Validation Polygons.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/FinalExport_v2.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/FinalWindbreakExport.ipynb"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "summary_statistics_and_analysis",
+      "title": "Summary Statistics + Post-processing",
+      "depends_on": [
+        "final_selection_and_exports"
+      ],
+      "steps": [
+        {
+          "id": "summary_automation",
+          "title": "Merge, clean, and summarize per-county outputs",
+          "notebooks": [
+            "SummaryStatistics/Merge Command.ipynb",
+            "SummaryStatistics/DeleteRedundantPolys.ipynb",
+            "SummaryStatistics/Delete JaMI_V=-1.ipynb",
+            "SummaryStatistics/Feature-to-Points.ipynb",
+            "SummaryStatistics/AddingAttributes4Analysis.ipynb",
+            "SummaryStatistics/SummaryStatAutomation_v1.ipynb",
+            "TreeHeightAnalysis/CodeSnips.ipynb"
+          ]
+        }
+      ]
+    }
+  ]
+}
