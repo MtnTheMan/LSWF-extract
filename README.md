@@ -12,6 +12,8 @@ outputs, and status tracking around the existing work.
 
 - `workflow/PRODUCTION_WORKFLOW.md` - thesis-grounded narrative workflow with notation,
   stage order, thresholds, and script mapping.
+- `workflow/REPO_SCOPE_NOTES.md` - notes on where this repository sits in the overall
+  production process, including what it can and cannot represent or execute by itself.
 - `workflow/workflow_manifest.json` - machine-readable manifest for all coded and
   manual/external production steps.
 - `workflow/lswf_workflow.py` - lightweight tracker and validator for the manifest.
@@ -35,6 +37,8 @@ The full production process is:
 11. Export, clean, summarize, validate, and analyze the final county outputs.
 
 See `workflow/PRODUCTION_WORKFLOW.md` for the detailed notation and stage-by-stage map.
+See `workflow/REPO_SCOPE_NOTES.md` for the representation/execution boundaries of this
+repository.
 
 ## Using the Tracker
 
