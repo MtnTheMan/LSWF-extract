@@ -1,46 +1,188 @@
 {
-  "name": "LSWF End-to-End Workflow",
-  "manifest_version": "1.0.0",
-  "updated_at_utc": "2026-02-19T20:28:44.854418+00:00",
+  "name": "LSWF End-to-End Production Workflow",
+  "manifest_version": "2.0.0",
+  "updated_at_utc": "2026-07-21T18:44:17.055208+00:00",
   "steps": {
-    "county_extract_and_buffer": {
-      "stage_id": "sub_meter_classification",
+    "define_study_area_counties_and_imagery": {
+      "stage_id": "study_area_and_source_inputs",
+      "step_title": "Define 35-county study area and 2022 NAIP inputs",
+      "execution_type": "documented_external",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null
     },
-    "county_landcover_generation": {
-      "stage_id": "sub_meter_classification",
+    "mosaic_county_naip_imagery": {
+      "stage_id": "sub_meter_land_cover_classification",
+      "step_title": "Mosaic county NAIP imagery",
+      "execution_type": "arcgis_pro_manual",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null
     },
-    "jackson_pipeline_foundation": {
-      "stage_id": "default_tof_filtering",
+    "cnn_land_cover_classification": {
+      "stage_id": "sub_meter_land_cover_classification",
+      "step_title": "Run U-Net/CNN land-cover classification",
+      "execution_type": "arcgis_pro_manual",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null
     },
-    "all_counties_filtering_metrics": {
-      "stage_id": "default_tof_filtering",
+    "land_cover_validation_reference_points": {
+      "stage_id": "sub_meter_land_cover_classification",
+      "step_title": "Generate/check land-cover validation reference points",
+      "execution_type": "documented_external",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null
     },
-    "centerline_generation": {
-      "stage_id": "voronoi_segmentation_and_centerlines",
+    "county_extract_buffer_extract_raster": {
+      "stage_id": "county_clip_and_tof_raster_isolation",
+      "step_title": "County extract, 500 m buffer, and extract raster by mask",
+      "execution_type": "arcpy_script",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null
     },
-    "final_filtering": {
-      "stage_id": "final_selection_and_exports",
+    "shrink_expand_forest_mask": {
+      "stage_id": "county_clip_and_tof_raster_isolation",
+      "step_title": "Create continuous forest mask with shrink-expand",
+      "execution_type": "arcpy_script",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null
     },
-    "summary_automation": {
-      "stage_id": "summary_statistics_and_analysis",
+    "derive_tof_and_contiguous_forest_rasters": {
+      "stage_id": "county_clip_and_tof_raster_isolation",
+      "step_title": "Derive ToF and contiguous forest raster masks",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "polygonize_tof_rasters": {
+      "stage_id": "tof_polygonization_and_default_prefilter",
+      "step_title": "Polygonize ToF rasters",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "initial_tof_area_and_shape_metrics": {
+      "stage_id": "tof_polygonization_and_default_prefilter",
+      "step_title": "Remove small ToF polygons and calculate default metrics",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "jackson_snfi_wsi_prototypes": {
+      "stage_id": "prototype_metric_and_segmentation_development",
+      "step_title": "Jackson County SNFI/WSI prototype calculations",
+      "execution_type": "prototype_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "jackson_centerline_voronoi_prototype": {
+      "stage_id": "prototype_metric_and_segmentation_development",
+      "step_title": "Jackson County centerline/Voronoi prototype",
+      "execution_type": "prototype_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "polygon_to_centerline_batch": {
+      "stage_id": "centerline_generation",
+      "step_title": "Generate ToF polygon centerlines",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "centerline_export_and_gdb_transfer": {
+      "stage_id": "centerline_generation",
+      "step_title": "Export centerline outputs and transfer to working geodatabases",
+      "execution_type": "export_or_transfer",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "centerline_cleanup_split_and_voronoi": {
+      "stage_id": "all_county_voronoi_segmentation",
+      "step_title": "Clean centerlines, split networks, create Voronoi polygons, and intersect back to ToFs",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "default_parent_shape_metrics_all_counties": {
+      "stage_id": "shape_metric_calculation_and_transfer",
+      "step_title": "Calculate default/parent polygon SNFI and WSI metrics",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "voronoi_shape_metrics_and_value_transfer": {
+      "stage_id": "shape_metric_calculation_and_transfer",
+      "step_title": "Calculate/transfer Voronoi SNFI and WSI values",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "export_voronoi_and_metric_files": {
+      "stage_id": "exports_and_intermediate_transfer",
+      "step_title": "Export Voronoi and metric-ready files",
+      "execution_type": "export_or_transfer",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "export_final_filtering_inputs": {
+      "stage_id": "exports_and_intermediate_transfer",
+      "step_title": "Export final filtering inputs and final windbreak file variants",
+      "execution_type": "export_or_transfer",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "filter_and_select_best_polygons": {
+      "stage_id": "best_polygon_selection_and_final_lswf",
+      "step_title": "Filter candidates and select best parent or Voronoi polygons",
+      "execution_type": "arcpy_script",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "pull_validation_polygons": {
+      "stage_id": "validation_and_qa",
+      "step_title": "Pull validation polygons and QA subsets",
+      "execution_type": "validation_or_analysis",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "merge_clean_and_count_final_outputs": {
+      "stage_id": "summary_statistics_and_counting_basis",
+      "step_title": "Merge final outputs, remove duplicates, and create counting-basis summaries",
+      "execution_type": "validation_or_analysis",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "final_feature_points": {
+      "stage_id": "summary_statistics_and_counting_basis",
+      "step_title": "Create final feature points/centroids for analysis",
+      "execution_type": "validation_or_analysis",
+      "status": "pending",
+      "notes": "",
+      "completed_at_utc": null
+    },
+    "tree_height_analysis_snippets": {
+      "stage_id": "tree_height_and_downstream_analysis",
+      "step_title": "Tree-height zonal statistics and export snippets",
+      "execution_type": "validation_or_analysis",
       "status": "pending",
       "notes": "",
       "completed_at_utc": null

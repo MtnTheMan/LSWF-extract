@@ -1,132 +1,776 @@
 {
-  "name": "LSWF End-to-End Workflow",
-  "version": "1.0.0",
-  "description": "Unified execution/trackable workflow that maps existing notebooks to the full LSWF process shown in the method flow chart.",
+  "name": "LSWF End-to-End Production Workflow",
+  "version": "2.0.0",
+  "description": "Thesis-grounded, trackable workflow for Linear Small Woody Feature extraction from NAIP imagery through final per-county and counting-basis outputs. Includes coded repo scripts and documented manual/external ArcGIS production steps.",
+  "notation": {
+    "object_prefixes": {
+      "I_": "Imagery input",
+      "R_": "Raster layer",
+      "P_": "Polygon feature class or shapefile",
+      "L_": "Line feature class or shapefile",
+      "Pt_": "Point feature class or shapefile",
+      "T_": "Table or statistical output",
+      "M_": "Model, method, or manual process"
+    },
+    "execution_types": [
+      "documented_external",
+      "arcgis_pro_manual",
+      "arcpy_script",
+      "prototype_script",
+      "export_or_transfer",
+      "validation_or_analysis"
+    ],
+    "statuses": [
+      "pending",
+      "in_progress",
+      "completed"
+    ]
+  },
+  "global_parameters": {
+    "study_area": "35 counties across Michigan, Wisconsin, and Ohio",
+    "source_imagery": "2022 NAIP 4-band RGB+NIR",
+    "native_resolution": {
+      "MI_WI": "0.6 m",
+      "OH": "0.3 m"
+    },
+    "land_cover_model": "U-Net/CNN semantic segmentation",
+    "land_cover_classes": 9,
+    "tree_canopy_class": 3,
+    "initial_area_threshold_m2": 250,
+    "final_minimum_euclidean_axis_m": 100,
+    "snfi_threshold": 0.8,
+    "wsi_threshold_current_script": 2.0,
+    "wsi_threshold_thesis_or_flowchart_reference": 3.0,
+    "shrink_expand_distance_ft": {
+      "shrink": 60,
+      "expand": 72
+    },
+    "centerline_point_spacing_m": 0.6,
+    "centerline_negative_buffer_m": -1.2
+  },
   "stages": [
     {
-      "id": "sub_meter_classification",
-      "title": "Sub-Meter Land Cover Classification",
+      "id": "study_area_and_source_inputs",
+      "title": "Study Area and Source Inputs",
       "depends_on": [],
+      "purpose": "Define county units, source imagery, coordinate handling, and the production extent.",
       "steps": [
         {
-          "id": "county_extract_and_buffer",
-          "title": "County extract, buffer, and raster prep",
-          "notebooks": [
-            "CountyClassificationsStage/County Extract + Buffer + Extract Raster.ipynb",
-            "CountyClassificationsStage/AllCounties.ipynb",
-            "CountyClassificationsStage/AllCountiesAlt.ipynb",
-            "CountyClassificationsStage/JacksonMIpilot.ipynb",
-            "CountyClassificationsStage/HamiltonOHpolygonWorkaround.ipynb"
-          ]
-        },
-        {
-          "id": "county_landcover_generation",
-          "title": "County-level classification and polygonization",
-          "notebooks": [
-            "CountyClassificationsStage/PolygonizeToFs Huron County.ipynb",
-            "CountyClassificationsStage/ShrinkExpandExample VernonCounty.ipynb",
-            "CountyClassificationsStage/ShapeMetricsAutomation_v1.ipynb"
+          "id": "define_study_area_counties_and_imagery",
+          "title": "Define 35-county study area and 2022 NAIP inputs",
+          "execution_type": "documented_external",
+          "notebooks": [],
+          "inputs": [
+            "I_NAIP_2022_4band",
+            "County boundaries for MI, WI, and OH study counties"
+          ],
+          "outputs": [
+            "County production list",
+            "County projection/UTM handling plan"
+          ],
+          "parameters": {
+            "MI_WI_resolution": "0.6 m",
+            "OH_resolution": "0.3 m",
+            "bands": "RGB+NIR"
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.2",
+            "Thesis v17 section 1.2.3",
+            "Appendix C flowchart"
           ]
         }
       ]
     },
     {
-      "id": "default_tof_filtering",
-      "title": "Default Trees Outside Forests (ToF) Filtering",
+      "id": "sub_meter_land_cover_classification",
+      "title": "Sub-Meter Land-Cover Classification",
       "depends_on": [
-        "sub_meter_classification"
+        "study_area_and_source_inputs"
       ],
+      "purpose": "Create the sub-meter 9-class land-cover rasters used by the ToF extraction workflow.",
       "steps": [
         {
-          "id": "jackson_pipeline_foundation",
-          "title": "Prototype filtering metrics and automation",
+          "id": "mosaic_county_naip_imagery",
+          "title": "Mosaic county NAIP imagery",
+          "execution_type": "arcgis_pro_manual",
+          "notebooks": [],
+          "inputs": [
+            "I_NAIP_2022_4band"
+          ],
+          "outputs": [
+            "I_NAIP_2022_4band_county_mosaic"
+          ],
+          "parameters": {
+            "preserve_native_resolution": true,
+            "utm_zones": "Standardized by county"
+          },
+          "documentation_refs": [
+            "Appendix C Reference 1"
+          ]
+        },
+        {
+          "id": "cnn_land_cover_classification",
+          "title": "Run U-Net/CNN land-cover classification",
+          "execution_type": "arcgis_pro_manual",
+          "notebooks": [],
+          "inputs": [
+            "I_NAIP_2022_4band_county_mosaic",
+            "M_CNN_U-Net"
+          ],
+          "outputs": [
+            "R_9class_LULC_county"
+          ],
+          "parameters": {
+            "model_family": "U-Net CNN",
+            "learn_rate": 0.01,
+            "classes": [
+              "Water",
+              "Low vegetation",
+              "Tree canopies",
+              "Shrubland",
+              "Wetlands",
+              "Roads",
+              "Impervious surfaces",
+              "Barren",
+              "Structures"
+            ]
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.4",
+            "Appendix C Reference 1"
+          ]
+        },
+        {
+          "id": "land_cover_validation_reference_points",
+          "title": "Generate/check land-cover validation reference points",
+          "execution_type": "documented_external",
+          "notebooks": [],
+          "inputs": [
+            "R_9class_LULC_county",
+            "Manual reference interpretation"
+          ],
+          "outputs": [
+            "Land-cover validation point set",
+            "Land-cover accuracy notes"
+          ],
+          "parameters": {
+            "validation_points": "3000 total across three representative counties"
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.4.1",
+            "Thesis v17 section 1.3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "county_clip_and_tof_raster_isolation",
+      "title": "County Clip, Shrink-Expand, and ToF Raster Isolation",
+      "depends_on": [
+        "sub_meter_land_cover_classification"
+      ],
+      "purpose": "Convert classified county land-cover rasters into ToF-only rasters by masking contiguous forest.",
+      "steps": [
+        {
+          "id": "county_extract_buffer_extract_raster",
+          "title": "County extract, 500 m buffer, and extract raster by mask",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "CountyClassificationsStage/County Extract + Buffer + Extract Raster.ipynb"
+          ],
+          "inputs": [
+            "R_9class_LULC_county",
+            "County boundary"
+          ],
+          "outputs": [
+            "R_9class_LULC_county_clip"
+          ],
+          "parameters": {
+            "buffer_distance": "500 Meters"
+          },
+          "documentation_refs": [
+            "Appendix C county prep"
+          ]
+        },
+        {
+          "id": "shrink_expand_forest_mask",
+          "title": "Create continuous forest mask with shrink-expand",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "CountyClassificationsStage/ShrinkExpandExample VernonCounty.ipynb"
+          ],
+          "inputs": [
+            "R_9class_LULC_county_clip"
+          ],
+          "outputs": [
+            "R_ShrunkTreeCanopy",
+            "R_ContinuousForestMask"
+          ],
+          "parameters": {
+            "zone_values": [
+              3
+            ],
+            "shrink_ft": 60,
+            "expand_ft": 72,
+            "example_60cm_cells": {
+              "shrink": 30,
+              "expand": 36
+            },
+            "example_30cm_cells": {
+              "shrink": 60,
+              "expand": 72
+            }
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.5",
+            "Appendix C Reference 2"
+          ]
+        },
+        {
+          "id": "derive_tof_and_contiguous_forest_rasters",
+          "title": "Derive ToF and contiguous forest raster masks",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "CountyClassificationsStage/AllCounties.ipynb",
+            "CountyClassificationsStage/AllCountiesAlt.ipynb",
+            "CountyClassificationsStage/JacksonMIpilot.ipynb"
+          ],
+          "inputs": [
+            "R_9class_LULC_county_clip",
+            "R_ContinuousForestMask"
+          ],
+          "outputs": [
+            "R_ToF_county",
+            "R_ContinuousForestMask_county"
+          ],
+          "parameters": {
+            "tree_canopy_class": 3,
+            "raster_math": "R_ToF = R_TreeCanopyMask - R_ContinuousForestMask"
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.5",
+            "Appendix C Reference 2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tof_polygonization_and_default_prefilter",
+      "title": "ToF Polygonization and Default Pre-Filtering",
+      "depends_on": [
+        "county_clip_and_tof_raster_isolation"
+      ],
+      "purpose": "Convert ToF rasters into polygon candidates and apply initial area and shape metrics.",
+      "steps": [
+        {
+          "id": "polygonize_tof_rasters",
+          "title": "Polygonize ToF rasters",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "CountyClassificationsStage/PolygonizeToFs Huron County.ipynb"
+          ],
+          "inputs": [
+            "R_ToF_county"
+          ],
+          "outputs": [
+            "P_ToF_raw"
+          ],
+          "parameters": {
+            "raster_to_polygon_simplify": "NO_SIMPLIFY"
+          },
+          "documentation_refs": [
+            "Appendix C Default LSWF Filtering Process"
+          ]
+        },
+        {
+          "id": "initial_tof_area_and_shape_metrics",
+          "title": "Remove small ToF polygons and calculate default metrics",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "CountyClassificationsStage/ShapeMetricsAutomation_v1.ipynb",
+            "CountyClassificationsStage/HamiltonOHpolygonWorkaround.ipynb"
+          ],
+          "inputs": [
+            "P_ToF_raw"
+          ],
+          "outputs": [
+            "P_ToF_gt250m2",
+            "P_DefaultFilteredCandidates"
+          ],
+          "parameters": {
+            "minimum_area_m2": 250,
+            "snfi_threshold": 0.8,
+            "metrics": [
+              "AREA_GEO",
+              "PERIM_GEO",
+              "Euc_Dist",
+              "Sinuos_Idx",
+              "SNFI",
+              "Abs_SNFI"
+            ]
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.6",
+            "Thesis v17 section 1.2.8",
+            "Appendix C Default LSWF Filtering Process"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prototype_metric_and_segmentation_development",
+      "title": "Prototype Metric and Segmentation Development",
+      "depends_on": [
+        "tof_polygonization_and_default_prefilter"
+      ],
+      "purpose": "Retain Jackson County and older development scripts that document method evolution.",
+      "steps": [
+        {
+          "id": "jackson_snfi_wsi_prototypes",
+          "title": "Jackson County SNFI/WSI prototype calculations",
+          "execution_type": "prototype_script",
           "notebooks": [
             "FilteringPolygons/WindbreakupJacksonCounty/SNFI_working_1.ipynb",
             "FilteringPolygons/WindbreakupJacksonCounty/Anisotropic_SNFI_WSI (18).ipynb",
-            "FilteringPolygons/WindbreakupJacksonCounty/FullAutomation_v2.ipynb",
             "FilteringPolygons/WindbreakupJacksonCounty/older/All other Anisotropic_SNFI_WSI code.ipynb"
+          ],
+          "inputs": [
+            "P_ToF_gt250m2"
+          ],
+          "outputs": [
+            "Prototype metric outputs"
+          ],
+          "parameters": {
+            "metrics": [
+              "SNFI",
+              "WSI",
+              "anisotropic axis metrics"
+            ]
+          },
+          "documentation_refs": [
+            "Thesis v17 Appendix B",
+            "Thesis v17 section 1.2.8"
           ]
         },
         {
-          "id": "all_counties_filtering_metrics",
-          "title": "Apply SNFI/WSI metrics to all counties",
+          "id": "jackson_centerline_voronoi_prototype",
+          "title": "Jackson County centerline/Voronoi prototype",
+          "execution_type": "prototype_script",
           "notebooks": [
-            "FilteringPolygons/WindbreaksAllCounties/SNFI_AllCounties_working_v2.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/WSI_AllCounties_working_v1.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/AllCountiesAutomated.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/ExportVoronoiFiles.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/ExportFiles_SNFI_Voronoi.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/FinalWindbreaksExport.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/FixingValuesInExports (21).ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/older-other/UN-RUN FinalWindbreaksExport.ipynb",
-            "FilteringPolygons/WindbreaksAllCounties/older-other/Alternate FixingValuesInExports runs.ipynb"
+            "FilteringPolygons/WindbreakupJacksonCounty/FullAutomation_v2.ipynb"
+          ],
+          "inputs": [
+            "P_ToF_gt250m2",
+            "L_ToF_Centerlines"
+          ],
+          "outputs": [
+            "Prototype Voronoi segmentation outputs"
+          ],
+          "parameters": {
+            "centerline_point_spacing_m": 0.6
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.7",
+            "Appendix C LSWF Voronoi Segmentation and Filtering Process"
           ]
         }
       ]
     },
     {
-      "id": "voronoi_segmentation_and_centerlines",
-      "title": "LSWF Voronoi Segmentation and Centerline Processing",
+      "id": "centerline_generation",
+      "title": "Centerline Generation",
       "depends_on": [
-        "default_tof_filtering"
+        "tof_polygonization_and_default_prefilter"
       ],
+      "purpose": "Generate and export centerlines from filtered ToF polygons.",
       "steps": [
         {
-          "id": "centerline_generation",
-          "title": "Generate and simplify centerlines",
+          "id": "polygon_to_centerline_batch",
+          "title": "Generate ToF polygon centerlines",
+          "execution_type": "arcpy_script",
           "notebooks": [
             "FilteringPolygons/CenterlineWorking/PolygonToCenterline.ipynb",
             "FilteringPolygons/CenterlineWorking/Working CenterlineFunctionExample.ipynb",
-            "FilteringPolygons/CenterlineWorking/Other code for Centerline working.ipynb",
+            "FilteringPolygons/CenterlineWorking/Other code for Centerline working.ipynb"
+          ],
+          "inputs": [
+            "P_ToF_gt250m2"
+          ],
+          "outputs": [
+            "L_ToF_Centerlines"
+          ],
+          "parameters": {
+            "tool": "arcpy.topographic.PolygonToCenterline",
+            "coverage_note": "Main batch list includes 34 counties and omits W2OH; downstream scripts include W2OH."
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.7.1",
+            "Appendix C LSWF Voronoi Segmentation and Filtering Process"
+          ]
+        },
+        {
+          "id": "centerline_export_and_gdb_transfer",
+          "title": "Export centerline outputs and transfer to working geodatabases",
+          "execution_type": "export_or_transfer",
+          "notebooks": [
             "FilteringPolygons/CenterlineWorking/CenterlineExports.ipynb",
             "FilteringPolygons/CenterlineWorking/GDB export.ipynb"
+          ],
+          "inputs": [
+            "L_ToF_Centerlines"
+          ],
+          "outputs": [
+            "L_ToF_Centerlines_exported"
+          ],
+          "parameters": {},
+          "documentation_refs": [
+            "Appendix C centerline export/working data"
           ]
         }
       ]
     },
     {
-      "id": "final_selection_and_exports",
-      "title": "Best Polygon Selection + Final Exports",
+      "id": "all_county_voronoi_segmentation",
+      "title": "All-County Centerline Cleanup and Voronoi Segmentation",
       "depends_on": [
-        "voronoi_segmentation_and_centerlines"
+        "centerline_generation"
       ],
+      "purpose": "Split connected ToF networks and create Voronoi/Thiessen polygon segments.",
       "steps": [
         {
-          "id": "final_filtering",
-          "title": "Final windbreak filtering and export",
+          "id": "centerline_cleanup_split_and_voronoi",
+          "title": "Clean centerlines, split networks, create Voronoi polygons, and intersect back to ToFs",
+          "execution_type": "arcpy_script",
           "notebooks": [
-            "FilteringPolygons/WindbreaksFinalFiltering/WindbreakFinalFiltering_v4.ipynb",
-            "FilteringPolygons/WindbreaksFinalFiltering/older/WindbreakFinalFiltering_v4 Alt Runs.ipynb",
-            "FilteringPolygons/WindbreaksFinalFiltering/older/Alt FixingValues.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/AllCountiesAutomated.ipynb"
+          ],
+          "inputs": [
+            "P_ToF_gt250m2",
+            "L_ToF_Centerlines"
+          ],
+          "outputs": [
+            "L_FinalSplitCenterlines",
+            "Pt_CenterlinePoints_0p6m",
+            "P_VoronoiIntersect_ToF"
+          ],
+          "parameters": {
+            "trim_line_first_m": 30,
+            "negative_buffer_m": -1.2,
+            "trim_line_second_m": 10,
+            "split_connection_threshold": "> 2 lines meeting at point",
+            "line_simplification_tolerance_m": 0.6,
+            "bend_detection_tolerances_m": [
+              2.5,
+              5,
+              7.5
+            ],
+            "centerline_point_spacing_m": 0.6,
+            "voronoi_tool": "CreateThiessenPolygons"
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.7.1",
+            "Appendix C Reference 3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shape_metric_calculation_and_transfer",
+      "title": "Parent and Voronoi Shape Metric Calculation/Transfer",
+      "depends_on": [
+        "all_county_voronoi_segmentation"
+      ],
+      "purpose": "Calculate and transfer SNFI, WSI, Euclidean distance, and related fields for default and Voronoi polygons.",
+      "steps": [
+        {
+          "id": "default_parent_shape_metrics_all_counties",
+          "title": "Calculate default/parent polygon SNFI and WSI metrics",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksAllCounties/SNFI_AllCounties_working_v2.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/WSI_AllCounties_working_v1.ipynb"
+          ],
+          "inputs": [
+            "P_ToF_gt250m2"
+          ],
+          "outputs": [
+            "P_DefaultPolygons_with_dSNFI_dWSI"
+          ],
+          "parameters": {
+            "metrics": [
+              "dSNFI",
+              "dSNFI_Axis",
+              "Abs_dSNFI",
+              "Max_dSNFI",
+              "dWSI",
+              "dWSI_Axis",
+              "Min_dWSI",
+              "Euc_Dist"
+            ]
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.8",
+            "Appendix C Reference 4"
+          ]
+        },
+        {
+          "id": "voronoi_shape_metrics_and_value_transfer",
+          "title": "Calculate/transfer Voronoi SNFI and WSI values",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksAllCounties/FixingValuesInExports (21).ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/older-other/Alternate FixingValuesInExports runs.ipynb",
             "FilteringPolygons/WindbreaksFinalFiltering/FixingValuesinExports (21).ipynb",
-            "FilteringPolygons/WindbreaksFinalFiltering/Pulling Validation Polygons.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/older/Alt FixingValues.ipynb"
+          ],
+          "inputs": [
+            "P_DefaultPolygons_with_dSNFI_dWSI",
+            "P_VoronoiIntersect_ToF"
+          ],
+          "outputs": [
+            "P_VoronoiPolygons_with_vSNFI_vWSI",
+            "P_DefaultPolygons_with_transferred_metrics"
+          ],
+          "parameters": {
+            "metrics": [
+              "vSNFI",
+              "vSNFI_Axis",
+              "Abs_vSNFI",
+              "Max_vSNFI",
+              "vWSI",
+              "vWSI_Axis",
+              "Min_vWSI",
+              "Euc_Dist"
+            ]
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.8",
+            "Appendix C Reference 4"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exports_and_intermediate_transfer",
+      "title": "Exports and Intermediate Transfer",
+      "depends_on": [
+        "shape_metric_calculation_and_transfer"
+      ],
+      "purpose": "Move intermediate outputs into the final filtering workspace.",
+      "steps": [
+        {
+          "id": "export_voronoi_and_metric_files",
+          "title": "Export Voronoi and metric-ready files",
+          "execution_type": "export_or_transfer",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksAllCounties/ExportVoronoiFiles.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/ExportFiles_SNFI_Voronoi.ipynb"
+          ],
+          "inputs": [
+            "P_VoronoiIntersect_ToF",
+            "P_DefaultPolygons_with_dSNFI_dWSI"
+          ],
+          "outputs": [
+            "Exported parent/default polygons",
+            "Exported Voronoi polygons"
+          ],
+          "parameters": {},
+          "documentation_refs": [
+            "Appendix C export steps"
+          ]
+        },
+        {
+          "id": "export_final_filtering_inputs",
+          "title": "Export final filtering inputs and final windbreak file variants",
+          "execution_type": "export_or_transfer",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksAllCounties/FinalWindbreaksExport.ipynb",
+            "FilteringPolygons/WindbreaksAllCounties/older-other/UN-RUN FinalWindbreaksExport.ipynb",
             "FilteringPolygons/WindbreaksFinalFiltering/FinalExport_v2.ipynb",
             "FilteringPolygons/WindbreaksFinalFiltering/FinalWindbreakExport.ipynb"
+          ],
+          "inputs": [
+            "Metric-ready parent/default polygons",
+            "Metric-ready Voronoi polygons"
+          ],
+          "outputs": [
+            "Final filtering input shapefiles",
+            "Final export variants"
+          ],
+          "parameters": {},
+          "documentation_refs": [
+            "Appendix C final export steps"
           ]
         }
       ]
     },
     {
-      "id": "summary_statistics_and_analysis",
-      "title": "Summary Statistics + Post-processing",
+      "id": "best_polygon_selection_and_final_lswf",
+      "title": "Best Polygon Selection and Final LSWF Dataset",
       "depends_on": [
-        "final_selection_and_exports"
+        "exports_and_intermediate_transfer"
       ],
+      "purpose": "Select the best parent/default or Voronoi-segmented polygon representation for the final LSWF dataset.",
       "steps": [
         {
-          "id": "summary_automation",
-          "title": "Merge, clean, and summarize per-county outputs",
+          "id": "filter_and_select_best_polygons",
+          "title": "Filter candidates and select best parent or Voronoi polygons",
+          "execution_type": "arcpy_script",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksFinalFiltering/WindbreakFinalFiltering_v4.ipynb",
+            "FilteringPolygons/WindbreaksFinalFiltering/older/WindbreakFinalFiltering_v4 Alt Runs.ipynb"
+          ],
+          "inputs": [
+            "P_DefaultPolygons_with_transferred_metrics",
+            "P_VoronoiPolygons_with_vSNFI_vWSI"
+          ],
+          "outputs": [
+            "P_FinalLSWF_county"
+          ],
+          "parameters": {
+            "minimum_area_m2": 250,
+            "snfi_threshold": 0.8,
+            "wsi_threshold_current_script": 2.0,
+            "minimum_euclidean_axis_m": 100,
+            "selection_rule": "Keep Voronoi components when multiple component polygons exceed parent SNFI; otherwise keep parent polygon when it is better or equal."
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.9",
+            "Appendix C Reference 5"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "validation_and_qa",
+      "title": "Validation and QA",
+      "depends_on": [
+        "best_polygon_selection_and_final_lswf"
+      ],
+      "purpose": "Extract validation features and support spatial/manual QA.",
+      "steps": [
+        {
+          "id": "pull_validation_polygons",
+          "title": "Pull validation polygons and QA subsets",
+          "execution_type": "validation_or_analysis",
+          "notebooks": [
+            "FilteringPolygons/WindbreaksFinalFiltering/Pulling Validation Polygons.ipynb"
+          ],
+          "inputs": [
+            "P_FinalLSWF_county",
+            "Validation geometry or sample definitions"
+          ],
+          "outputs": [
+            "Validation polygon subsets"
+          ],
+          "parameters": {},
+          "documentation_refs": [
+            "Thesis v17 section 1.3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "summary_statistics_and_counting_basis",
+      "title": "Summary Statistics and Counting Basis",
+      "depends_on": [
+        "best_polygon_selection_and_final_lswf"
+      ],
+      "purpose": "Merge, clean, and summarize final LSWF outputs for per-county and counting-basis analysis.",
+      "steps": [
+        {
+          "id": "merge_clean_and_count_final_outputs",
+          "title": "Merge final outputs, remove duplicates, and create counting-basis summaries",
+          "execution_type": "validation_or_analysis",
           "notebooks": [
             "SummaryStatistics/Merge Command.ipynb",
             "SummaryStatistics/DeleteRedundantPolys.ipynb",
             "SummaryStatistics/Delete JaMI_V=-1.ipynb",
-            "SummaryStatistics/Feature-to-Points.ipynb",
             "SummaryStatistics/AddingAttributes4Analysis.ipynb",
-            "SummaryStatistics/SummaryStatAutomation_v1.ipynb",
-            "TreeHeightAnalysis/CodeSnips.ipynb"
+            "SummaryStatistics/SummaryStatAutomation_v1.ipynb"
+          ],
+          "inputs": [
+            "P_FinalLSWF_county",
+            "L_FinalSplitCenterlines"
+          ],
+          "outputs": [
+            "P_FinalLSWF_AllCounties",
+            "T_CountySummary",
+            "Final LSWF width/length/count fields"
+          ],
+          "parameters": {
+            "duplicate_key": "f_OID",
+            "duplicate_rule": "Retain largest Shape_Area feature per f_OID",
+            "average_width_formula": "Shape_Area / Euc_Dist"
+          },
+          "documentation_refs": [
+            "Thesis v17 section 1.2.10",
+            "Appendix C final LSWF polygon layer"
+          ]
+        },
+        {
+          "id": "final_feature_points",
+          "title": "Create final feature points/centroids for analysis",
+          "execution_type": "validation_or_analysis",
+          "notebooks": [
+            "SummaryStatistics/Feature-to-Points.ipynb"
+          ],
+          "inputs": [
+            "P_FinalLSWF_AllCounties"
+          ],
+          "outputs": [
+            "Pt_FinalLSWF_Centroids"
+          ],
+          "parameters": {},
+          "documentation_refs": [
+            "Chapter 2 downstream analysis"
           ]
         }
       ]
+    },
+    {
+      "id": "tree_height_and_downstream_analysis",
+      "title": "Tree Height and Downstream Analysis",
+      "depends_on": [
+        "summary_statistics_and_counting_basis"
+      ],
+      "purpose": "Attach or analyze tree-height and additional downstream outputs.",
+      "steps": [
+        {
+          "id": "tree_height_analysis_snippets",
+          "title": "Tree-height zonal statistics and export snippets",
+          "execution_type": "validation_or_analysis",
+          "notebooks": [
+            "TreeHeightAnalysis/CodeSnips.ipynb"
+          ],
+          "inputs": [
+            "P_FinalLSWF_AllCounties",
+            "Tree-height raster"
+          ],
+          "outputs": [
+            "T_TreeHeightStats",
+            "Tree-height attributes"
+          ],
+          "parameters": {},
+          "documentation_refs": [
+            "Chapter 2 downstream analysis"
+          ]
+        }
+      ]
+    }
+  ],
+  "known_provenance_items": [
+    {
+      "id": "wsi_threshold_2_vs_3",
+      "description": "Thesis/flowchart notation references WSI threshold 3.0, while WindbreakFinalFiltering_v4.ipynb uses wsi_threshold = 2.0. Resolve whether 2.0 is the final production tightening or whether documentation should retain 3.0."
+    },
+    {
+      "id": "w2oh_centerline_coverage",
+      "description": "PolygonToCenterline.ipynb lists 34 centerline input shapefiles and omits W2OH, while downstream all-county scripts include W2OH."
+    },
+    {
+      "id": "cnn_landcover_code_absent",
+      "description": "No repo script was found for the upstream CNN/U-Net land-cover classification. It is tracked as an ArcGIS Pro/manual or external model step."
     }
   ]
 }
